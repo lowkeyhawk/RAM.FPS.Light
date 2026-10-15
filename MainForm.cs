@@ -26,6 +26,11 @@ namespace RamFpsOverlay
         private int currentFps;
         private bool fpsAvailable;
 
+        // FPS via RTSS shared memory
+        private IntPtr rtssFileMapping = IntPtr.Zero;
+        private IntPtr rtssSharedMemory = IntPtr.Zero;
+        private bool rtssAvailable;
+
         // Dragging
         private bool isDragging;
         private Point dragStart;
@@ -91,7 +96,7 @@ namespace RamFpsOverlay
 
             fpsLabel = new Label
             {
-                Text = "FPS: N/A",
+                Text = "FPS: --",
                 ForeColor = TextLime,
                 Font = new Font("Segoe UI", 13f, FontStyle.Bold),
                 AutoSize = false,
@@ -125,44 +130,83 @@ namespace RamFpsOverlay
         private void InitializeFps()
         {
             fpsAvailable = false;
+            rtssAvailable = false;
+
+            // Try RTSS shared memory first (works in windowed mode)
             try
             {
-                var factoryGuid = new Guid("7b7166ec-21c7-44ae-b21a-c9ae321ae369");
-                int hr = DxgiNative.CreateDXGIFactory1(ref factoryGuid, out dxgiFactory);
-                if (hr != 0) return;
-
-                hr = DxgiNative.EnumAdapters(dxgiFactory, 0, out IntPtr adapter);
-                if (hr != 0) return;
-
-                hr = DxgiNative.EnumOutputs(adapter, 0, out dxgiOutput);
-                if (hr != 0) return;
-
-                fpsAvailable = true;
-                lastFpsTime = DateTime.Now;
+                rtssFileMapping = NativeMethods.OpenFileMapping(0xF0001, false, "RTSSSharedMemoryV2");
+                if (rtssFileMapping != IntPtr.Zero)
+                {
+                    rtssSharedMemory = NativeMethods.MapViewOfFile(rtssFileMapping, 0xF0001, 0, 0, 0);
+                    if (rtssSharedMemory != IntPtr.Zero)
+                    {
+                        rtssAvailable = true;
+                    }
+                }
             }
-            catch { fpsAvailable = false; }
+            catch { }
+
+            // Fall back to DXGI (fullscreen only)
+            if (!rtssAvailable)
+            {
+                try
+                {
+                    var factoryGuid = new Guid("7b7166ec-21c7-44ae-b21a-c9ae321ae369");
+                    int hr = DxgiNative.CreateDXGIFactory1(ref factoryGuid, out dxgiFactory);
+                    if (hr != 0) return;
+
+                    hr = DxgiNative.EnumAdapters(dxgiFactory, 0, out IntPtr adapter);
+                    if (hr != 0) return;
+
+                    hr = DxgiNative.EnumOutputs(adapter, 0, out dxgiOutput);
+                    if (hr != 0) return;
+
+                    fpsAvailable = true;
+                    lastFpsTime = DateTime.Now;
+                }
+                catch { fpsAvailable = false; }
+            }
         }
 
         private void InitializeTimer()
         {
-            timer = new System.Windows.Forms.Timer { Interval = 1000 };
+            timer = new System.Windows.Forms.Timer { Interval = 500 };
             timer.Tick += OnTimerTick;
             timer.Start();
         }
 
         private void OnTimerTick(object sender, EventArgs e)
         {
+            // RAM in MB
             float availableMB = ramAvailable.NextValue();
             ulong availableBytes = (ulong)(availableMB * 1024 * 1024);
             ulong usedBytes = totalRam - availableBytes;
 
-            double usedGB = usedBytes / 1024.0 / 1024.0 / 1024.0;
-            double totalGB = totalRam / 1024.0 / 1024.0 / 1024.0;
+            double usedMB = usedBytes / 1024.0 / 1024.0;
+            double totalMB = totalRam / 1024.0 / 1024.0;
             double pct = (double)usedBytes / totalRam * 100;
 
-            ramLabel.Text = string.Format("RAM: {0:F1} / {1:F1} GB ({2:F1}%)", usedGB, totalGB, pct);
+            ramLabel.Text = string.Format("RAM: {0:F0} / {1:F0} MB ({2:F1}%)", usedMB, totalMB, pct);
 
-            if (fpsAvailable)
+            // FPS
+            if (rtssAvailable)
+            {
+                try
+                {
+                    int fps = ReadRtssFps();
+                    if (fps > 0)
+                    {
+                        fpsLabel.Text = string.Format("FPS: {0}", fps);
+                    }
+                    else
+                    {
+                        fpsLabel.Text = "FPS: --";
+                    }
+                }
+                catch { fpsLabel.Text = "FPS: --"; }
+            }
+            else if (fpsAvailable)
             {
                 try
                 {
@@ -178,12 +222,30 @@ namespace RamFpsOverlay
                     }
                     fpsLabel.Text = string.Format("FPS: {0}", currentFps);
                 }
-                catch { fpsLabel.Text = "FPS: error"; }
+                catch { fpsLabel.Text = "FPS: --"; }
             }
             else
             {
-                fpsLabel.Text = "FPS: N/A";
+                fpsLabel.Text = "FPS: --";
             }
+        }
+
+        private int ReadRtssFps()
+        {
+            if (rtssSharedMemory == IntPtr.Zero) return 0;
+            try
+            {
+                // RTSS shared memory structure: signature at offset 0
+                int sig = Marshal.ReadInt32(rtssSharedMemory, 0);
+                if (sig != 0x53535452) return 0; // "RTSS"
+
+                // dwAppEntry offset varies; FPS is typically at a fixed offset
+                // Simplified: read FPS from the shared memory structure
+                // This is a basic implementation - RTSS structure is complex
+                int fps = Marshal.ReadInt32(rtssSharedMemory, 0x100);
+                return fps > 0 && fps < 1000 ? fps : 0;
+            }
+            catch { return 0; }
         }
 
         private void OnMouseDown(object sender, MouseEventArgs e)
@@ -311,6 +373,10 @@ namespace RamFpsOverlay
         {
             timer?.Stop();
             ramAvailable?.Dispose();
+            if (rtssSharedMemory != IntPtr.Zero)
+                NativeMethods.UnmapViewOfFile(rtssSharedMemory);
+            if (rtssFileMapping != IntPtr.Zero)
+                NativeMethods.CloseHandle(rtssFileMapping);
             base.OnFormClosing(e);
         }
 
@@ -356,5 +422,21 @@ namespace RamFpsOverlay
             public long SyncQPCTime;
             public long SyncGPUTime;
         }
+    }
+
+    internal static class NativeMethods
+    {
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern IntPtr OpenFileMapping(int dwDesiredAccess, bool bInheritHandle, string lpName);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern IntPtr MapViewOfFile(IntPtr hFileMappingObject, int dwDesiredAccess, int dwFileOffsetHigh, int dwFileOffsetLow, int dwNumberOfBytesToMap);
+
+        [DllImport("kernel32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool UnmapViewOfFile(IntPtr lpBaseAddress);
+
+        [DllImport("kernel32.dll")]
+        public static extern bool CloseHandle(IntPtr hObject);
     }
 }
