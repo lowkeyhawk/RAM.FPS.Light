@@ -13,6 +13,8 @@ namespace RamFpsOverlay
         private Label ramLabel;
         private Label fpsLabel;
         private System.Windows.Forms.Timer timer;
+        private NotifyIcon trayIcon;
+        private ContextMenuStrip trayMenu;
 
         // RAM
         private PerformanceCounter ramAvailable;
@@ -110,7 +112,44 @@ namespace RamFpsOverlay
             MouseUp += OnMouseUp;
             MouseEnter += OnMouseEnter;
             MouseLeave += OnMouseLeave;
+
+            InitializeTray();
         }
+
+        private void InitializeTray()
+        {
+            // Create a mini glass panel icon
+            using (var bmp = new Bitmap(16, 16))
+            using (var g = Graphics.FromImage(bmp))
+            {
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.Clear(Color.FromArgb(15, 15, 20));
+                // Border
+                g.DrawRectangle(new Pen(Color.FromArgb(80, 255, 255, 255)), 0, 0, 15, 15);
+                // Lime accent
+                g.DrawLine(new Pen(AccentLime, 2), 2, 1, 13, 1);
+                // Text area (two lines)
+                g.DrawLine(Pens.White, 3, 6, 12, 6);
+                g.DrawLine(new Pen(AccentLime, 1), 3, 10, 12, 10);
+
+                var hIcon = bmp.GetHicon();
+                trayIcon = new NotifyIcon
+                {
+                    Icon = Icon.FromHandle(hIcon),
+                    Text = "RAM + FPS Overlay",
+                    Visible = true
+                };
+                DestroyIcon(hIcon);
+            }
+
+            trayMenu = new ContextMenuStrip();
+            trayMenu.Items.Add("Exit", null, (s, e) => Application.Exit());
+            trayIcon.ContextMenuStrip = trayMenu;
+            trayIcon.DoubleClick += (s, e) => { Visible = !Visible; };
+        }
+
+        [DllImport("user32.dll")]
+        private static extern bool DestroyIcon(IntPtr handle);
 
         private void InitializeRam()
         {
