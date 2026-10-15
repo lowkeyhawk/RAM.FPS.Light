@@ -37,8 +37,8 @@ namespace RamFpsOverlay
 
         // Glassmorphism tokens
         private static readonly Color AccentLime = Color.FromArgb(0xFF, 0xC8, 0xFF, 0x00);
-        private static readonly Color GlassSurface = Color.FromArgb(220, 15, 15, 20);
-        private static readonly Color GlassSurfaceHover = Color.FromArgb(230, 20, 20, 28);
+        private static readonly Color GlassSurface = Color.FromArgb(13, 15, 15, 20); // ~5% opacity
+        private static readonly Color GlassSurfaceHover = Color.FromArgb(18, 20, 20, 28); // ~7% opacity
         private static readonly Color GlassRim = Color.FromArgb(80, 255, 255, 255);
         private static readonly Color GlassRimHover = Color.FromArgb(120, 255, 255, 255);
         private static readonly Color GlassRimInner = Color.FromArgb(40, 255, 255, 255);
