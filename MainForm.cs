@@ -22,6 +22,7 @@ namespace RamFpsOverlay
         private uint lastPresentCount;
         private DateTime lastFpsTime;
         private int currentFps;
+        private bool fpsAvailable;
 
         // Dragging
         private bool isDragging;
@@ -33,45 +34,46 @@ namespace RamFpsOverlay
             InitializeRam();
             InitializeFps();
             InitializeTimer();
+            EnableAcrylic();
         }
 
         private void InitializeComponent()
         {
             FormBorderStyle = FormBorderStyle.None;
             TopMost = true;
-            Opacity = 0.85;
+            Opacity = 0.92;
             StartPosition = FormStartPosition.Manual;
-            Size = new Size(240, 80);
+            Size = new Size(260, 100);
             Location = new Point(
                 Screen.PrimaryScreen.WorkingArea.Right - Width - 20,
                 Screen.PrimaryScreen.WorkingArea.Bottom - Height - 20
             );
             DoubleBuffered = true;
             ShowInTaskbar = false;
-            BackColor = Color.Black;
+            BackColor = Color.FromArgb(40, 255, 255, 255);
 
             ramLabel = new Label
             {
                 Text = "RAM: --",
-                ForeColor = Color.Lime,
+                ForeColor = Color.White,
                 BackColor = Color.Transparent,
-                Font = new Font("Consolas", 12f, FontStyle.Bold),
+                Font = new Font("Segoe UI", 11f, FontStyle.Bold),
                 AutoSize = false,
                 TextAlign = ContentAlignment.MiddleCenter,
                 Dock = DockStyle.Top,
-                Height = 40
+                Height = 50
             };
 
             fpsLabel = new Label
             {
                 Text = "FPS: --",
-                ForeColor = Color.Cyan,
+                ForeColor = Color.White,
                 BackColor = Color.Transparent,
-                Font = new Font("Consolas", 12f, FontStyle.Bold),
+                Font = new Font("Segoe UI", 11f, FontStyle.Bold),
                 AutoSize = false,
                 TextAlign = ContentAlignment.MiddleCenter,
                 Dock = DockStyle.Bottom,
-                Height = 40
+                Height = 50
             };
 
             Controls.Add(ramLabel);
@@ -96,21 +98,23 @@ namespace RamFpsOverlay
 
         private void InitializeFps()
         {
+            fpsAvailable = false;
             try
             {
                 var factoryGuid = new Guid("7b7166ec-21c7-44ae-b21a-c9ae321ae369");
                 int hr = DxgiNative.CreateDXGIFactory1(ref factoryGuid, out dxgiFactory);
-                if (hr != 0) { dxgiOutput = IntPtr.Zero; return; }
+                if (hr != 0) return;
 
                 hr = DxgiNative.EnumAdapters(dxgiFactory, 0, out IntPtr adapter);
-                if (hr != 0) { dxgiOutput = IntPtr.Zero; return; }
+                if (hr != 0) return;
 
                 hr = DxgiNative.EnumOutputs(adapter, 0, out dxgiOutput);
-                if (hr != 0) { dxgiOutput = IntPtr.Zero; return; }
+                if (hr != 0) return;
 
+                fpsAvailable = true;
                 lastFpsTime = DateTime.Now;
             }
-            catch { dxgiOutput = IntPtr.Zero; }
+            catch { fpsAvailable = false; }
         }
 
         private void InitializeTimer()
@@ -127,7 +131,7 @@ namespace RamFpsOverlay
             double pct = (double)used / totalRam * 100;
             ramLabel.Text = string.Format("RAM: {0} / {1} GB ({2:F1}%)", used / 1024 / 1024, totalRam / 1024 / 1024, pct);
 
-            if (dxgiOutput != IntPtr.Zero)
+            if (fpsAvailable)
             {
                 try
                 {
@@ -141,10 +145,14 @@ namespace RamFpsOverlay
                         lastPresentCount = stats.PresentCount;
                         lastFpsTime = now;
                     }
+                    fpsLabel.Text = string.Format("FPS: {0}", currentFps);
                 }
-                catch { }
+                catch { fpsLabel.Text = "FPS: error"; }
             }
-            fpsLabel.Text = string.Format("FPS: {0}", currentFps);
+            else
+            {
+                fpsLabel.Text = "FPS: fullscreen only";
+            }
         }
 
         private void OnMouseDown(object sender, MouseEventArgs e)
@@ -160,6 +168,40 @@ namespace RamFpsOverlay
 
         private void OnMouseUp(object sender, MouseEventArgs e) { isDragging = false; }
 
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            using (var pen = new Pen(Color.FromArgb(120, 255, 255, 255), 1))
+            {
+                e.Graphics.DrawRectangle(pen, 0, 0, Width - 1, Height - 1);
+            }
+        }
+
+        private void EnableAcrylic()
+        {
+            try
+            {
+                var accent = new AccentPolicy
+                {
+                    AccentState = AccentState.ACCENT_ENABLE_ACRYLICBLURBEHIND,
+                    AccentFlags = 2,
+                    GradientColor = 0x99FFFFFF,
+                    AnimationId = 0
+                };
+                var data = Marshal.AllocHGlobal(Marshal.SizeOf(accent));
+                Marshal.StructureToPtr(accent, data, false);
+                var attr = new WindowCompositionAttributeData
+                {
+                    Attribute = WindowCompositionAttribute.WCA_ACCENT_POLICY,
+                    Data = data,
+                    SizeOfData = Marshal.SizeOf(accent)
+                };
+                SetWindowCompositionAttribute(Handle, ref attr);
+                Marshal.FreeHGlobal(data);
+            }
+            catch { }
+        }
+
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
             timer?.Stop();
@@ -170,6 +212,9 @@ namespace RamFpsOverlay
         [DllImport("kernel32.dll")]
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool GlobalMemoryStatusEx(ref MEMORYSTATUSEX lpBuffer);
+
+        [DllImport("user32.dll")]
+        private static extern int SetWindowCompositionAttribute(IntPtr hwnd, ref WindowCompositionAttributeData data);
 
         [StructLayout(LayoutKind.Sequential)]
         private struct MEMORYSTATUSEX
@@ -183,6 +228,38 @@ namespace RamFpsOverlay
             public ulong ullTotalVirtual;
             public ulong ullAvailVirtual;
             public ulong ullAvailExtendedVirtual;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct AccentPolicy
+        {
+            public AccentState AccentState;
+            public int AccentFlags;
+            public uint GradientColor;
+            public int AnimationId;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct WindowCompositionAttributeData
+        {
+            public WindowCompositionAttribute Attribute;
+            public IntPtr Data;
+            public int SizeOfData;
+        }
+
+        private enum WindowCompositionAttribute
+        {
+            WCA_ACCENT_POLICY = 19
+        }
+
+        private enum AccentState
+        {
+            ACCENT_DISABLED = 0,
+            ACCENT_ENABLE_GRADIENT = 1,
+            ACCENT_ENABLE_TRANSPARENTGRADIENT = 2,
+            ACCENT_ENABLE_BLURBEHIND = 3,
+            ACCENT_ENABLE_ACRYLICBLURBEHIND = 4,
+            ACCENT_INVALID_STATE = 5
         }
     }
 
