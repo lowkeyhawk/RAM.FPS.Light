@@ -54,7 +54,7 @@ namespace RamFpsOverlay
             get
             {
                 var cp = base.CreateParams;
-                cp.ExStyle |= WS_EX_LAYERED | WS_EX_TOOLWINDOW;
+                cp.ExStyle |= WS_EX_LAYERED;
                 return cp;
             }
         }
@@ -64,7 +64,7 @@ namespace RamFpsOverlay
             FormBorderStyle = FormBorderStyle.None;
             TopMost = true;
             StartPosition = FormStartPosition.Manual;
-            ShowInTaskbar = false;
+            ShowInTaskbar = true;
             Size = new Size(300, 120);
             Location = new Point(
                 Screen.PrimaryScreen.WorkingArea.Right - Width - 20,
