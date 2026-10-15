@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Liquid Glass UI</title>
+<style>
+  :root {
+    --glass-bg: rgba(255, 255, 255, 0.08);
+    --glass-border: rgba(255, 255, 255, 0.15);
+    --glass-highlight: rgba(255, 255, 255, 0.1);
+    --glass-blur: 40px;
+    --glass-saturate: 1.4;
+    --glass-radius: 20px;
+    --accent: #0088FF;
+    --text-primary: rgba(255, 255, 255, 0.95);
+    --text-secondary: rgba(255, 255, 255, 0.6);
+    --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+    --spring-duration: 0.5s;
+  }
+
+  @media (min-width: 768px) {
+    :root {
+      --glass-blur: 60px;
+      --glass-radius: 24px;
+    }
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    min-height: 100vh;
+    color: var(--text-primary);
+    overflow-x: hidden;
+  }
+
+  /* Background content - NOT glass */
+  .bg-content {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 40px;
+    flex-wrap: wrap;
+    padding: 120px 40px 120px;
+  }
+
+  .bg-card {
+    width: 200px;
+    height: 200px;
+    border-radius: 24px;
+    background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%);
+    border: 1px solid rgba(255,255,255,0.06);
+  }
+
+  .bg-card:nth-child(1) { background: linear-gradient(135deg, #e94560 0%, #533483 100%); opacity: 0.6; }
+  .bg-card:nth-child(2) { background: linear-gradient(135deg, #0f3460 0%, #16213e 100%); opacity: 0.8; }
+  .bg-card:nth-child(3) { background: linear-gradient(135deg, #533483 0%, #e94560 100%); opacity: 0.5; }
+
+  /* Glass surface base */
+  .glass {
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    border: 1px solid var(--glass-border);
+    border-radius: var(--glass-radius);
+    box-shadow:
+      inset 0 1px 0 var(--glass-highlight),
+      0 8px 32px rgba(0, 0, 0, 0.2);
+    transition:
+      background var(--spring-duration) var(--spring),
+      box-shadow var(--spring-duration) var(--spring),
+      transform var(--spring-duration) var(--spring);
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* Specular highlight - subtle gradient at top */
+  .glass::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 50%;
+    background: linear-gradient(180deg, rgba(255,255,255,0.06) 0%, transparent 100%);
+    pointer-events: none;
+    border-radius: inherit;
+  }
+
+  /* Glass hover - increase opacity, reduce blur slightly */
+  .glass:hover {
+    background: rgba(255, 255, 255, 0.12);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.15),
+      0 12px 40px rgba(0, 0, 0, 0.25);
+  }
+
+  /* Glass press - spring physics */
+  .glass:active {
+    transform: scale(0.97);
+    background: rgba(255, 255, 255, 0.15);
+    transition: transform 0.15s var(--spring), background 0.15s var(--spring);
+  }
+
+  /* Tinted glass - primary action only */
+  .glass--tinted {
+    background: rgba(0, 136, 255, 0.15);
+    border-color: rgba(0, 136, 255, 0.3);
+  }
+  .glass--tinted:hover {
+    background: rgba(0, 136, 255, 0.22);
+  }
+
+  /* Toolbar - glass chrome */
+  .toolbar {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    min-width: 400px;
+    justify-content: space-between;
+  }
+
+  .toolbar__title {
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+
+  .toolbar__actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  /* Buttons on glass - solid fill, NOT glass */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 16px;
+    border-radius: 12px;
+    border: none;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: transform var(--spring-duration) var(--spring), opacity 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .btn:active { transform: scale(0.95); }
+
+  .btn--primary {
+    background: var(--accent);
+    color: white;
+    box-shadow: 0 2px 8px rgba(0, 136, 255, 0.3);
+  }
+  .btn--primary:hover { background: #1a94ff; }
+
+  .btn--secondary {
+    background: rgba(255, 255, 255, 0.12);
+    color: var(--text-primary);
+  }
+  .btn--secondary:hover { background: rgba(255, 255, 255, 0.18); }
+
+  .btn--icon {
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-primary);
+  }
+  .btn--icon:hover { background: rgba(255, 255, 255, 0.14); }
+
+  /* FAB - glass, floating */
+  .fab {
+    position: fixed;
+    bottom: 32px;
+    right: 32px;
+    z-index: 10;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 24px;
+    color: white;
+  }
+
+  /* Sheet - glass chrome */
+  .sheet {
+    position: fixed;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    width: min(420px, calc(100vw - 32px));
+    padding: 24px;
+    border-radius: 24px 24px 0 0;
+    margin-bottom: 16px;
+  }
+
+  .sheet__handle {
+    width: 36px;
+    height: 5px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.3);
+    margin: 0 auto 20px;
+  }
+
+  .sheet__title {
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 16px;
+  }
+
+  .sheet__content {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .sheet__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  .sheet__row-label {
+    font-size: 15px;
+    color: var(--text-primary);
+  }
+
+  .sheet__row-value {
+    font-size: 15px;
+    color: var(--text-secondary);
+  }
+
+  /* Toggle switch - solid, on glass */
+  .toggle {
+    width: 44px;
+    height: 26px;
+    border-radius: 13px;
+    background: rgba(255, 255, 255, 0.15);
+    position: relative;
+    cursor: pointer;
+    transition: background 0.3s;
+  }
+  .toggle::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: white;
+    transition: transform 0.3s var(--spring);
+  }
+  .toggle--on { background: var(--accent); }
+  .toggle--on::after { transform: translateX(18px); }
+
+  /* Accessibility: Reduce Transparency */
+  @media (prefers-reduced-transparency: reduce) {
+    .glass {
+      background: rgba(30, 30, 30, 0.95);
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+    .glass--tinted {
+      background: rgba(0, 100, 180, 0.95);
+    }
+  }
+
+  /* Accessibility: Reduce Motion */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      transition-duration: 0.01ms !important;
+      animation-duration: 0.01ms !important;
+    }
+  }
+
+  /* Accessibility: Increase Contrast */
+  @media (prefers-contrast: more) {
+    .glass {
+      border-width: 2px;
+      border-color: rgba(255, 255, 255, 0.3);
+    }
+    .glass::before {
+      background: linear-gradient(180deg, rgba(255,255,255,0.1) 0%, transparent 100%);
+    }
+  }
+
+  /* Fallback for no backdrop-filter support */
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .glass {
+      background: rgba(40, 40, 40, 0.92);
+    }
+    .glass--tinted {
+      background: rgba(0, 100, 180, 0.92);
+    }
+  }
+
+  /* Parallax specular highlight on hover */
+  .glass__specular {
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle at var(--mx, 50%) var(--my, 50%), rgba(255,255,255,0.08) 0%, transparent 60%);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .glass:hover .glass__specular { opacity: 1; }
+
+  /* Tab bar - glass chrome */
+  .tabbar {
+    position: fixed;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    display: flex;
+    gap: 4px;
+    padding: 6px;
+  }
+
+  .tab {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 16px;
+    border-radius: 14px;
+    cursor: pointer;
+    transition: background 0.2s;
+    min-width: 64px;
+  }
+  .tab:hover { background: rgba(255, 255, 255, 0.08); }
+  .tab--active { background: rgba(255, 255, 255, 0.12); }
+
+  .tab__icon { font-size: 20px; }
+  .tab__label { font-size: 11px; color: var(--text-secondary); }
+  .tab--active .tab__label { color: var(--text-primary); }
+
+  /* Hide sheet by default, show with JS */
+  .sheet { display: none; }
+  .sheet--visible { display: block; }
+</style>
+</head>
+<body>
+
+<!-- Background content - NOT glass -->
+<div class="bg-content">
+  <div class="bg-card"></div>
+  <div class="bg-card"></div>
+  <div class="bg-card"></div>
+</div>
+
+<!-- Toolbar - GLASS -->
+<div class="glass toolbar" id="toolbar">
+  <div class="glass__specular"></div>
+  <span class="toolbar__title">Liquid Glass</span>
+  <div class="toolbar__actions">
+    <button class="btn btn--icon" title="Search">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+    </button>
+    <button class="btn btn--primary" id="showSheetBtn">Open</button>
+  </div>
+</div>
+
+<!-- Tab Bar - GLASS -->
+<div class="glass tabbar" id="tabbar">
+  <div class="glass__specular"></div>
+  <div class="tab tab--active">
+    <span class="tab__icon">🏠</span>
+    <span class="tab__label">Home</span>
+  </div>
+  <div class="tab">
+    <span class="tab__icon">🔍</span>
+    <span class="tab__label">Search</span>
+  </div>
+  <div class="tab">
+    <span class="tab__icon">⚙️</span>
+    <span class="tab__label">Settings</span>
+  </div>
+</div>
+
+<!-- FAB - GLASS (tinted, primary) -->
+<div class="glass glass--tinted fab" id="fab">
+  <div class="glass__specular"></div>
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+</div>
+
+<!-- Sheet - GLASS -->
+<div class="glass sheet" id="sheet">
+  <div class="glass__specular"></div>
+  <div class="sheet__handle"></div>
+  <div class="sheet__title">Controls</div>
+  <div class="sheet__content">
+    <div class="sheet__row">
+      <span class="sheet__row-label">Reduce Transparency</span>
+      <div class="toggle" id="toggleTransparency"></div>
+    </div>
+    <div class="sheet__row">
+      <span class="sheet__row-label">Reduce Motion</span>
+      <div class="toggle" id="toggleMotion"></div>
+    </div>
+    <div class="sheet__row">
+      <span class="sheet__row-label">Increase Contrast</span>
+      <div class="toggle" id="toggleContrast"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Parallax specular highlight
+  document.querySelectorAll('.glass').forEach(function(glass) {
+    glass.addEventListener('mousemove', function(e) {
+      var rect = glass.getBoundingClientRect();
+      var x = ((e.clientX - rect.left) / rect.width) * 100;
+      var y = ((e.clientY - rect.top) / rect.height) * 100;
+      glass.style.setProperty('--mx', x + '%');
+      glass.style.setProperty('--my', y + '%');
+    });
+  });
+
+  // Sheet toggle
+  var sheet = document.getElementById('sheet');
+  document.getElementById('showSheetBtn').addEventListener('click', function() {
+    sheet.classList.toggle('sheet--visible');
+  });
+  document.getElementById('fab').addEventListener('click', function() {
+    sheet.classList.toggle('sheet--visible');
+  });
+
+  // Tab switching
+  document.querySelectorAll('.tab').forEach(function(tab) {
+    tab.addEventListener('click', function() {
+      document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('tab--active'); });
+      tab.classList.add('tab--active');
+    });
+  });
+
+  // Toggle switches
+  document.querySelectorAll('.toggle').forEach(function(toggle) {
+    toggle.addEventListener('click', function() {
+      toggle.classList.toggle('toggle--on');
+    });
+  });
+</script>
+
+</body>
+</html>

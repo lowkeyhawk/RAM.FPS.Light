@@ -29,11 +29,11 @@ namespace RamFpsOverlay
         private bool isDragging;
         private Point dragStart;
 
-        // Liquid glass design tokens (from AndroidLiquidGlass repo)
+        // Liquid glass design tokens
         private static readonly Color AccentColor = Color.FromArgb(0xFF, 0x00, 0x88, 0xFF);
-        private static readonly Color GlassSurface = Color.FromArgb(102, 255, 255, 255); // 40% opacity
-        private static readonly Color GlassBorder = Color.FromArgb(26, 0, 0, 0); // 10% opacity
-        private static readonly Color InnerShadow = Color.FromArgb(38, 0, 0, 0); // 15% opacity
+        private static readonly Color GlassSurface = Color.FromArgb(102, 15, 15, 20); // dark 40%
+        private static readonly Color GlassBorder = Color.FromArgb(60, 255, 255, 255); // subtle white edge
+        private static readonly Color InnerHighlight = Color.FromArgb(40, 255, 255, 255); // top glow
         private static readonly Color TextColor = Color.White;
 
         public MainForm()
@@ -191,31 +191,31 @@ namespace RamFpsOverlay
             base.OnPaint(e);
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
 
-            // Liquid glass surface - rounded rectangle with 40% opacity white
-            using (var path = GetRoundedRect(0, 0, Width - 1, Height - 1, 16))
+            // Dark glass surface - rounded rectangle
+            using (var path = GetRoundedRect(0, 0, Width - 1, Height - 1, 20))
             using (var surfaceBrush = new SolidBrush(GlassSurface))
             {
                 e.Graphics.FillPath(surfaceBrush, path);
             }
 
-            // Inner shadow - subtle dark edge inside the glass
-            using (var path = GetRoundedRect(2, 2, Width - 5, Height - 5, 14))
-            using (var shadowBrush = new SolidBrush(InnerShadow))
+            // Inner highlight - subtle white glow at top
+            using (var path = GetRoundedRect(2, 2, Width - 5, Height - 5, 18))
+            using (var highlightBrush = new SolidBrush(InnerHighlight))
             {
-                e.Graphics.DrawPath(new Pen(shadowBrush, 3), path);
+                e.Graphics.DrawPath(new Pen(highlightBrush, 2), path);
             }
 
-            // Glass border - 10% opacity dark edge
-            using (var path = GetRoundedRect(0.5f, 0.5f, Width - 2, Height - 2, 16))
+            // Glass border - subtle white edge
+            using (var path = GetRoundedRect(0.5f, 0.5f, Width - 2, Height - 2, 20))
             using (var borderPen = new Pen(GlassBorder, 1.5f))
             {
                 e.Graphics.DrawPath(borderPen, path);
             }
 
             // Accent line at top - liquid glass highlight
-            using (var accentPen = new Pen(AccentColor, 2f))
+            using (var accentPen = new Pen(AccentColor, 2.5f))
             {
-                e.Graphics.DrawLine(accentPen, 20, 1, Width - 20, 1);
+                e.Graphics.DrawLine(accentPen, 24, 1.5f, Width - 24, 1.5f);
             }
         }
 
@@ -240,7 +240,7 @@ namespace RamFpsOverlay
                     {
                         AccentState = AccentState.ACCENT_ENABLE_ACRYLICBLURBEHIND,
                         AccentFlags = 2,
-                        GradientColor = 0x99FFFFFF,
+                        GradientColor = 0x99000000,
                         AnimationId = 0
                     };
                     var data = Marshal.AllocHGlobal(Marshal.SizeOf(accent));
