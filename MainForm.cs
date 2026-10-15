@@ -30,13 +30,20 @@ namespace RamFpsOverlay
         private bool isDragging;
         private Point dragStart;
 
+        // Hover/press state
+        private bool isHovered;
+        private bool isPressed;
+        private Point mousePos;
+
         // Glassmorphism tokens
         private static readonly Color AccentLime = Color.FromArgb(0xFF, 0xC8, 0xFF, 0x00);
         private static readonly Color GlassRim = Color.FromArgb(80, 255, 255, 255);
+        private static readonly Color GlassRimHover = Color.FromArgb(120, 255, 255, 255);
         private static readonly Color GlassRimInner = Color.FromArgb(40, 255, 255, 255);
         private static readonly Color SeparatorLine = Color.FromArgb(30, 255, 255, 255);
         private static readonly Color TextWhite = Color.White;
         private static readonly Color TextLime = AccentLime;
+        private static readonly Color ShadowColor = Color.FromArgb(60, 0, 0, 0);
 
         public MainForm()
         {
@@ -68,7 +75,6 @@ namespace RamFpsOverlay
             SetStyle(ControlStyles.SupportsTransparentBackColor, true);
             BackColor = Color.Transparent;
 
-            // TableLayoutPanel for seamless single-panel layout
             table = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
@@ -84,7 +90,7 @@ namespace RamFpsOverlay
                 Text = "RAM: --",
                 ForeColor = TextWhite,
                 BackColor = Color.Transparent,
-                Font = new Font("Segoe UI", 12f, FontStyle.Bold),
+                Font = new Font("Segoe UI", 13f, FontStyle.Bold),
                 AutoSize = false,
                 TextAlign = ContentAlignment.MiddleCenter,
                 Dock = DockStyle.Fill
@@ -92,10 +98,10 @@ namespace RamFpsOverlay
 
             fpsLabel = new Label
             {
-                Text = "FPS: --",
+                Text = "FPS: N/A",
                 ForeColor = TextLime,
                 BackColor = Color.Transparent,
-                Font = new Font("Segoe UI", 12f, FontStyle.Bold),
+                Font = new Font("Segoe UI", 13f, FontStyle.Bold),
                 AutoSize = false,
                 TextAlign = ContentAlignment.MiddleCenter,
                 Dock = DockStyle.Fill
@@ -112,6 +118,8 @@ namespace RamFpsOverlay
             MouseDown += OnMouseDown;
             MouseMove += OnMouseMove;
             MouseUp += OnMouseUp;
+            MouseEnter += OnMouseEnter;
+            MouseLeave += OnMouseLeave;
         }
 
         private void InitializeRam()
@@ -182,28 +190,55 @@ namespace RamFpsOverlay
             }
             else
             {
-                fpsLabel.Text = "FPS: --";
+                fpsLabel.Text = "FPS: N/A";
             }
         }
 
         private void OnMouseDown(object sender, MouseEventArgs e)
         {
-            if (e.Button == MouseButtons.Left) { isDragging = true; dragStart = e.Location; }
+            if (e.Button == MouseButtons.Left)
+            {
+                isDragging = true;
+                isPressed = true;
+                dragStart = e.Location;
+                Invalidate();
+            }
         }
 
         private void OnMouseMove(object sender, MouseEventArgs e)
         {
+            mousePos = e.Location;
             if (isDragging)
             {
                 Location = new Point(Left + e.X - dragStart.X, Top + e.Y - dragStart.Y);
                 DwmFlush();
+            }
+            if (!isHovered)
+            {
+                isHovered = true;
+                Invalidate();
             }
         }
 
         private void OnMouseUp(object sender, MouseEventArgs e)
         {
             isDragging = false;
+            isPressed = false;
             DwmFlush();
+            Invalidate();
+        }
+
+        private void OnMouseEnter(object sender, EventArgs e)
+        {
+            isHovered = true;
+            Invalidate();
+        }
+
+        private void OnMouseLeave(object sender, EventArgs e)
+        {
+            isHovered = false;
+            isPressed = false;
+            Invalidate();
         }
 
         protected override void OnPaintBackground(PaintEventArgs e)
@@ -213,12 +248,22 @@ namespace RamFpsOverlay
 
         protected override void OnPaint(PaintEventArgs e)
         {
-            // Do NOT paint a surface - DWM acrylic handles the blur.
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
 
-            // Bright rim - outer edge highlight
+            // Drop shadow for depth
+            for (int i = 1; i <= 4; i++)
+            {
+                using (var path = GetRoundedRect(i * 0.5f, i * 0.5f, Width - 1 - i, Height - 1 - i, 20))
+                using (var shadowPen = new Pen(Color.FromArgb(15, 0, 0, 0), 1f))
+                {
+                    e.Graphics.DrawPath(shadowPen, path);
+                }
+            }
+
+            // Rim - brighter on hover
+            var rimColor = isHovered ? GlassRimHover : GlassRim;
             using (var path = GetRoundedRect(0.5f, 0.5f, Width - 2, Height - 2, 20))
-            using (var rimPen = new Pen(GlassRim, 2f))
+            using (var rimPen = new Pen(rimColor, isHovered ? 2.5f : 2f))
             {
                 e.Graphics.DrawPath(rimPen, path);
             }
@@ -230,7 +275,16 @@ namespace RamFpsOverlay
                 e.Graphics.DrawPath(innerPen, path);
             }
 
-            // Separator line between RAM and FPS
+            // Specular highlight on hover - radial gradient at mouse position
+            if (isHovered)
+            {
+                using (var specularBrush = new SolidBrush(Color.FromArgb(25, 255, 255, 255)))
+                {
+                    e.Graphics.FillEllipse(specularBrush, mousePos.X - 30, mousePos.Y - 30, 60, 60);
+                }
+            }
+
+            // Separator line
             using (var sepPen = new Pen(SeparatorLine, 1f))
             {
                 e.Graphics.DrawLine(sepPen, 24, Height / 2, Width - 24, Height / 2);
