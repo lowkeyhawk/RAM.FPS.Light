@@ -18,18 +18,11 @@ namespace RamFpsOverlay
         private PerformanceCounter ramAvailable;
         private ulong totalRam;
 
-        // FPS via DXGI
-        private IntPtr dxgiFactory;
-        private IntPtr dxgiOutput;
-        private uint lastPresentCount;
+        // FPS via DWM (Desktop Window Manager) — works everywhere
+        private uint lastDwmFrame;
         private DateTime lastFpsTime;
         private int currentFps;
         private bool fpsAvailable;
-
-        // FPS via RTSS shared memory
-        private IntPtr rtssFileMapping = IntPtr.Zero;
-        private IntPtr rtssSharedMemory = IntPtr.Zero;
-        private bool rtssAvailable;
 
         // Dragging
         private bool isDragging;
@@ -129,44 +122,9 @@ namespace RamFpsOverlay
 
         private void InitializeFps()
         {
-            fpsAvailable = false;
-            rtssAvailable = false;
-
-            // Try RTSS shared memory first (works in windowed mode)
-            try
-            {
-                rtssFileMapping = NativeMethods.OpenFileMapping(0xF0001, false, "RTSSSharedMemoryV2");
-                if (rtssFileMapping != IntPtr.Zero)
-                {
-                    rtssSharedMemory = NativeMethods.MapViewOfFile(rtssFileMapping, 0xF0001, 0, 0, 0);
-                    if (rtssSharedMemory != IntPtr.Zero)
-                    {
-                        rtssAvailable = true;
-                    }
-                }
-            }
-            catch { }
-
-            // Fall back to DXGI (fullscreen only)
-            if (!rtssAvailable)
-            {
-                try
-                {
-                    var factoryGuid = new Guid("7b7166ec-21c7-44ae-b21a-c9ae321ae369");
-                    int hr = DxgiNative.CreateDXGIFactory1(ref factoryGuid, out dxgiFactory);
-                    if (hr != 0) return;
-
-                    hr = DxgiNative.EnumAdapters(dxgiFactory, 0, out IntPtr adapter);
-                    if (hr != 0) return;
-
-                    hr = DxgiNative.EnumOutputs(adapter, 0, out dxgiOutput);
-                    if (hr != 0) return;
-
-                    fpsAvailable = true;
-                    lastFpsTime = DateTime.Now;
-                }
-                catch { fpsAvailable = false; }
-            }
+            // DWM is always available on Windows 8+
+            fpsAvailable = true;
+            lastFpsTime = DateTime.Now;
         }
 
         private void InitializeTimer()
@@ -189,63 +147,27 @@ namespace RamFpsOverlay
 
             ramLabel.Text = string.Format("RAM: {0:F0} / {1:F0} MB ({2:F1}%)", usedMB, totalMB, pct);
 
-            // FPS
-            if (rtssAvailable)
+            // FPS via DWM — works everywhere (desktop, browser, games)
+            if (fpsAvailable)
             {
                 try
                 {
-                    int fps = ReadRtssFps();
-                    if (fps > 0)
-                    {
-                        fpsLabel.Text = string.Format("FPS: {0}", fps);
-                    }
-                    else
-                    {
-                        fpsLabel.Text = "FPS: --";
-                    }
-                }
-                catch { fpsLabel.Text = "FPS: --"; }
-            }
-            else if (fpsAvailable)
-            {
-                try
-                {
-                    DxgiNative.GetFrameStatistics(dxgiOutput, out var stats);
+                    var timing = new DwmNative.DWM_TIMING_INFO();
+                    timing.cbSize = Marshal.SizeOf(timing);
+                    DwmNative.DwmGetCompositionTimingInfo(IntPtr.Zero, ref timing);
                     var now = DateTime.Now;
                     double elapsed = (now - lastFpsTime).TotalSeconds;
                     if (elapsed > 0.5)
                     {
-                        uint delta = stats.PresentCount - lastPresentCount;
+                        uint delta = timing.cFrame - lastDwmFrame;
                         currentFps = (int)(delta / elapsed);
-                        lastPresentCount = stats.PresentCount;
+                        lastDwmFrame = timing.cFrame;
                         lastFpsTime = now;
                     }
                     fpsLabel.Text = string.Format("FPS: {0}", currentFps);
                 }
                 catch { fpsLabel.Text = "FPS: --"; }
             }
-            else
-            {
-                fpsLabel.Text = "FPS: --";
-            }
-        }
-
-        private int ReadRtssFps()
-        {
-            if (rtssSharedMemory == IntPtr.Zero) return 0;
-            try
-            {
-                // RTSS shared memory structure: signature at offset 0
-                int sig = Marshal.ReadInt32(rtssSharedMemory, 0);
-                if (sig != 0x53535452) return 0; // "RTSS"
-
-                // dwAppEntry offset varies; FPS is typically at a fixed offset
-                // Simplified: read FPS from the shared memory structure
-                // This is a basic implementation - RTSS structure is complex
-                int fps = Marshal.ReadInt32(rtssSharedMemory, 0x100);
-                return fps > 0 && fps < 1000 ? fps : 0;
-            }
-            catch { return 0; }
         }
 
         private void OnMouseDown(object sender, MouseEventArgs e)
@@ -373,10 +295,6 @@ namespace RamFpsOverlay
         {
             timer?.Stop();
             ramAvailable?.Dispose();
-            if (rtssSharedMemory != IntPtr.Zero)
-                NativeMethods.UnmapViewOfFile(rtssSharedMemory);
-            if (rtssFileMapping != IntPtr.Zero)
-                NativeMethods.CloseHandle(rtssFileMapping);
             base.OnFormClosing(e);
         }
 
@@ -399,44 +317,34 @@ namespace RamFpsOverlay
         }
     }
 
-    internal static class DxgiNative
+    internal static class DwmNative
     {
-        [DllImport("dxgi.dll", PreserveSig = true)]
-        public static extern int CreateDXGIFactory1([In] ref Guid riid, [Out] out IntPtr ppFactory);
-
-        [DllImport("dxgi.dll", PreserveSig = true)]
-        public static extern int EnumAdapters(IntPtr pFactory, uint Adapter, out IntPtr ppAdapter);
-
-        [DllImport("dxgi.dll", PreserveSig = true)]
-        public static extern int EnumOutputs(IntPtr pAdapter, uint Output, out IntPtr ppOutput);
-
-        [DllImport("dxgi.dll", PreserveSig = true)]
-        public static extern int GetFrameStatistics(IntPtr pOutput, out DXGI_FRAME_STATISTICS pStats);
+        [DllImport("dwmapi.dll")]
+        public static extern int DwmGetCompositionTimingInfo(IntPtr hwnd, ref DWM_TIMING_INFO timingInfo);
 
         [StructLayout(LayoutKind.Sequential)]
-        public struct DXGI_FRAME_STATISTICS
+        public struct DWM_TIMING_INFO
         {
-            public uint PresentCount;
-            public uint PresentRefreshCount;
-            public uint SyncRefreshCount;
-            public long SyncQPCTime;
-            public long SyncGPUTime;
+            public int cbSize;
+            public long qpcRefreshPeriod;
+            public long qpcComposeTime;
+            public long qpcFrameDuration;
+            public long qpcFramePresentationTime;
+            public long qpcRefresh;
+            public long qpcCompositionTime;
+            public uint cRefresh;
+            public uint cDXRefresh;
+            public uint cFrame;
+            public uint cDXPresent;
+            public long qpcCompositionStart;
+            public uint cRefreshesSinceLastModeChange;
+            public uint cRefreshes;
+            public long qpcPresentationTime;
+            public uint cFrames;
+            public uint cDXFrame;
+            public long qpcFrameStart;
+            public uint cFramesSinceLastModeChange;
+            public uint cFramesRefreshed;
         }
-    }
-
-    internal static class NativeMethods
-    {
-        [DllImport("kernel32.dll", SetLastError = true)]
-        public static extern IntPtr OpenFileMapping(int dwDesiredAccess, bool bInheritHandle, string lpName);
-
-        [DllImport("kernel32.dll", SetLastError = true)]
-        public static extern IntPtr MapViewOfFile(IntPtr hFileMappingObject, int dwDesiredAccess, int dwFileOffsetHigh, int dwFileOffsetLow, int dwNumberOfBytesToMap);
-
-        [DllImport("kernel32.dll")]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        public static extern bool UnmapViewOfFile(IntPtr lpBaseAddress);
-
-        [DllImport("kernel32.dll")]
-        public static extern bool CloseHandle(IntPtr hObject);
     }
 }
