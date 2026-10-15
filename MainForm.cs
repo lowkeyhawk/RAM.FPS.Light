@@ -29,12 +29,13 @@ namespace RamFpsOverlay
         private bool isDragging;
         private Point dragStart;
 
-        // Liquid glass design tokens
-        private static readonly Color AccentColor = Color.FromArgb(0xFF, 0x00, 0x88, 0xFF);
-        private static readonly Color GlassSurface = Color.FromArgb(102, 15, 15, 20); // dark 40%
-        private static readonly Color GlassBorder = Color.FromArgb(60, 255, 255, 255); // subtle white edge
-        private static readonly Color InnerHighlight = Color.FromArgb(40, 255, 255, 255); // top glow
-        private static readonly Color TextColor = Color.White;
+        // Glassmorphism tokens from mockup
+        private static readonly Color AccentLime = Color.FromArgb(0xFF, 0xC8, 0xFF, 0x00); // lime/yellow-green
+        private static readonly Color GlassSurface = Color.FromArgb(45, 20, 20, 25); // very subtle dark tint
+        private static readonly Color GlassRim = Color.FromArgb(80, 255, 255, 255); // bright rim
+        private static readonly Color GlassRimInner = Color.FromArgb(40, 255, 255, 255); // inner glow
+        private static readonly Color TextWhite = Color.White;
+        private static readonly Color TextLime = AccentLime;
 
         public MainForm()
         {
@@ -67,10 +68,10 @@ namespace RamFpsOverlay
 
             ramLabel = new Label
             {
-                Text = "RAM: --",
-                ForeColor = TextColor,
+                Text = "RAM",
+                ForeColor = TextWhite,
                 BackColor = Color.Transparent,
-                Font = new Font("Segoe UI", 12f, FontStyle.Bold),
+                Font = new Font("Segoe UI", 13f, FontStyle.Bold),
                 AutoSize = false,
                 TextAlign = ContentAlignment.MiddleCenter,
                 Dock = DockStyle.Top,
@@ -79,10 +80,10 @@ namespace RamFpsOverlay
 
             fpsLabel = new Label
             {
-                Text = "FPS: --",
-                ForeColor = TextColor,
+                Text = "FPS",
+                ForeColor = TextLime,
                 BackColor = Color.Transparent,
-                Font = new Font("Segoe UI", 12f, FontStyle.Bold),
+                Font = new Font("Segoe UI", 13f, FontStyle.Bold),
                 AutoSize = false,
                 TextAlign = ContentAlignment.MiddleCenter,
                 Dock = DockStyle.Bottom,
@@ -164,7 +165,7 @@ namespace RamFpsOverlay
             }
             else
             {
-                fpsLabel.Text = "FPS: fullscreen only";
+                fpsLabel.Text = "FPS: --";
             }
         }
 
@@ -183,7 +184,7 @@ namespace RamFpsOverlay
 
         protected override void OnPaintBackground(PaintEventArgs e)
         {
-            // Let DWM acrylic show through
+            // Let DWM acrylic blur show through
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -191,31 +192,31 @@ namespace RamFpsOverlay
             base.OnPaint(e);
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
 
-            // Dark glass surface - rounded rectangle
+            // Very subtle dark tint - lets the DWM blur show through
             using (var path = GetRoundedRect(0, 0, Width - 1, Height - 1, 20))
             using (var surfaceBrush = new SolidBrush(GlassSurface))
             {
                 e.Graphics.FillPath(surfaceBrush, path);
             }
 
-            // Inner highlight - subtle white glow at top
-            using (var path = GetRoundedRect(2, 2, Width - 5, Height - 5, 18))
-            using (var highlightBrush = new SolidBrush(InnerHighlight))
-            {
-                e.Graphics.DrawPath(new Pen(highlightBrush, 2), path);
-            }
-
-            // Glass border - subtle white edge
+            // Bright rim - outer edge highlight (like the mockup's glass edge)
             using (var path = GetRoundedRect(0.5f, 0.5f, Width - 2, Height - 2, 20))
-            using (var borderPen = new Pen(GlassBorder, 1.5f))
+            using (var rimPen = new Pen(GlassRim, 2f))
             {
-                e.Graphics.DrawPath(borderPen, path);
+                e.Graphics.DrawPath(rimPen, path);
             }
 
-            // Accent line at top - liquid glass highlight
-            using (var accentPen = new Pen(AccentColor, 2.5f))
+            // Inner glow - subtle white inside edge
+            using (var path = GetRoundedRect(2.5f, 2.5f, Width - 6, Height - 6, 18))
+            using (var innerPen = new Pen(GlassRimInner, 1f))
             {
-                e.Graphics.DrawLine(accentPen, 24, 1.5f, Width - 24, 1.5f);
+                e.Graphics.DrawPath(innerPen, path);
+            }
+
+            // Lime accent line at top - liquid glass highlight
+            using (var accentPen = new Pen(AccentLime, 2.5f))
+            {
+                e.Graphics.DrawLine(accentPen, 24, 2, Width - 24, 2);
             }
         }
 
