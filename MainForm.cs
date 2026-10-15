@@ -49,6 +49,7 @@ namespace RamFpsOverlay
         {
             base.OnHandleCreated(e);
             EnableAcrylic();
+            DwmFlush();
         }
 
         private void InitializeComponent()
@@ -66,7 +67,6 @@ namespace RamFpsOverlay
             SetStyle(ControlStyles.SupportsTransparentBackColor, true);
             BackColor = Color.Transparent;
 
-            // RAM label - top half
             ramLabel = new Label
             {
                 Text = "RAM: --",
@@ -79,7 +79,6 @@ namespace RamFpsOverlay
                 Height = 60
             };
 
-            // FPS label - bottom half
             fpsLabel = new Label
             {
                 Text = "FPS: --",
@@ -146,7 +145,6 @@ namespace RamFpsOverlay
             ulong availableBytes = (ulong)(availableMB * 1024 * 1024);
             ulong usedBytes = totalRam - availableBytes;
 
-            // Convert to GB (bytes -> KB -> MB -> GB)
             double usedGB = usedBytes / 1024.0 / 1024.0 / 1024.0;
             double totalGB = totalRam / 1024.0 / 1024.0 / 1024.0;
             double pct = (double)usedBytes / totalRam * 100;
@@ -185,10 +183,20 @@ namespace RamFpsOverlay
         private void OnMouseMove(object sender, MouseEventArgs e)
         {
             if (isDragging)
+            {
                 Location = new Point(Left + e.X - dragStart.X, Top + e.Y - dragStart.Y);
+                // Force DWM to refresh the blur region after move
+                DwmFlush();
+                Invalidate();
+            }
         }
 
-        private void OnMouseUp(object sender, MouseEventArgs e) { isDragging = false; }
+        private void OnMouseUp(object sender, MouseEventArgs e)
+        {
+            isDragging = false;
+            DwmFlush();
+            Invalidate();
+        }
 
         protected override void OnPaintBackground(PaintEventArgs e)
         {
@@ -200,28 +208,24 @@ namespace RamFpsOverlay
             base.OnPaint(e);
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
 
-            // Very subtle dark tint - lets the DWM blur show through
             using (var path = GetRoundedRect(0, 0, Width - 1, Height - 1, 20))
             using (var surfaceBrush = new SolidBrush(GlassSurface))
             {
                 e.Graphics.FillPath(surfaceBrush, path);
             }
 
-            // Bright rim - outer edge highlight
             using (var path = GetRoundedRect(0.5f, 0.5f, Width - 2, Height - 2, 20))
             using (var rimPen = new Pen(GlassRim, 2f))
             {
                 e.Graphics.DrawPath(rimPen, path);
             }
 
-            // Inner glow - subtle white inside edge
             using (var path = GetRoundedRect(2.5f, 2.5f, Width - 6, Height - 6, 18))
             using (var innerPen = new Pen(GlassRimInner, 1f))
             {
                 e.Graphics.DrawPath(innerPen, path);
             }
 
-            // Lime accent line at top
             using (var accentPen = new Pen(AccentLime, 2.5f))
             {
                 e.Graphics.DrawLine(accentPen, 24, 2, Width - 24, 2);
@@ -280,6 +284,9 @@ namespace RamFpsOverlay
 
         [DllImport("user32.dll")]
         private static extern int SetWindowCompositionAttribute(IntPtr hwnd, ref WindowCompositionAttributeData data);
+
+        [DllImport("dwmapi.dll")]
+        private static extern int DwmFlush();
 
         [StructLayout(LayoutKind.Sequential)]
         private struct MEMORYSTATUSEX
