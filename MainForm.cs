@@ -34,6 +34,11 @@ namespace RamFpsOverlay
             InitializeRam();
             InitializeFps();
             InitializeTimer();
+        }
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
             EnableAcrylic();
         }
 
@@ -41,7 +46,6 @@ namespace RamFpsOverlay
         {
             FormBorderStyle = FormBorderStyle.None;
             TopMost = true;
-            Opacity = 0.92;
             StartPosition = FormStartPosition.Manual;
             Size = new Size(260, 100);
             Location = new Point(
@@ -50,7 +54,8 @@ namespace RamFpsOverlay
             );
             DoubleBuffered = true;
             ShowInTaskbar = false;
-            BackColor = Color.FromArgb(40, 255, 255, 255);
+            SetStyle(ControlStyles.SupportsTransparentBackColor, true);
+            BackColor = Color.Transparent;
 
             ramLabel = new Label
             {
@@ -168,38 +173,52 @@ namespace RamFpsOverlay
 
         private void OnMouseUp(object sender, MouseEventArgs e) { isDragging = false; }
 
+        protected override void OnPaintBackground(PaintEventArgs e)
+        {
+            // Do not paint background - let DWM acrylic show through
+        }
+
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);
-            using (var pen = new Pen(Color.FromArgb(120, 255, 255, 255), 1))
+            // Glassmorphism: subtle white border + soft glow
+            using (var borderPen = new Pen(Color.FromArgb(180, 255, 255, 255), 1.5f))
             {
-                e.Graphics.DrawRectangle(pen, 0, 0, Width - 1, Height - 1);
+                e.Graphics.DrawRectangle(borderPen, 0.5f, 0.5f, Width - 2, Height - 2);
+            }
+            // Frosted glass overlay - very subtle white fill
+            using (var fillBrush = new SolidBrush(Color.FromArgb(30, 255, 255, 255)))
+            {
+                e.Graphics.FillRectangle(fillBrush, 1, 1, Width - 3, Height - 3);
             }
         }
 
         private void EnableAcrylic()
         {
-            try
+            if (IsHandleCreated)
             {
-                var accent = new AccentPolicy
+                try
                 {
-                    AccentState = AccentState.ACCENT_ENABLE_ACRYLICBLURBEHIND,
-                    AccentFlags = 2,
-                    GradientColor = 0x99FFFFFF,
-                    AnimationId = 0
-                };
-                var data = Marshal.AllocHGlobal(Marshal.SizeOf(accent));
-                Marshal.StructureToPtr(accent, data, false);
-                var attr = new WindowCompositionAttributeData
-                {
-                    Attribute = WindowCompositionAttribute.WCA_ACCENT_POLICY,
-                    Data = data,
-                    SizeOfData = Marshal.SizeOf(accent)
-                };
-                SetWindowCompositionAttribute(Handle, ref attr);
-                Marshal.FreeHGlobal(data);
+                    var accent = new AccentPolicy
+                    {
+                        AccentState = AccentState.ACCENT_ENABLE_ACRYLICBLURBEHIND,
+                        AccentFlags = 2,
+                        GradientColor = 0xCCFFFFFF,
+                        AnimationId = 0
+                    };
+                    var data = Marshal.AllocHGlobal(Marshal.SizeOf(accent));
+                    Marshal.StructureToPtr(accent, data, false);
+                    var attr = new WindowCompositionAttributeData
+                    {
+                        Attribute = WindowCompositionAttribute.WCA_ACCENT_POLICY,
+                        Data = data,
+                        SizeOfData = Marshal.SizeOf(accent)
+                    };
+                    SetWindowCompositionAttribute(Handle, ref attr);
+                    Marshal.FreeHGlobal(data);
+                }
+                catch { }
             }
-            catch { }
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)
