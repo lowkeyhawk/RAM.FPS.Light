@@ -4,3 +4,5 @@ publish/
 *.user
 *.suo
 .vs/
+*.png
+*.ps1
