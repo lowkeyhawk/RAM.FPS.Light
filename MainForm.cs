@@ -29,11 +29,11 @@ namespace RamFpsOverlay
         private bool isDragging;
         private Point dragStart;
 
-        // Glassmorphism tokens from mockup
-        private static readonly Color AccentLime = Color.FromArgb(0xFF, 0xC8, 0xFF, 0x00); // lime/yellow-green
-        private static readonly Color GlassSurface = Color.FromArgb(45, 20, 20, 25); // very subtle dark tint
-        private static readonly Color GlassRim = Color.FromArgb(80, 255, 255, 255); // bright rim
-        private static readonly Color GlassRimInner = Color.FromArgb(40, 255, 255, 255); // inner glow
+        // Glassmorphism tokens
+        private static readonly Color AccentLime = Color.FromArgb(0xFF, 0xC8, 0xFF, 0x00);
+        private static readonly Color GlassSurface = Color.FromArgb(45, 20, 20, 25);
+        private static readonly Color GlassRim = Color.FromArgb(80, 255, 255, 255);
+        private static readonly Color GlassRimInner = Color.FromArgb(40, 255, 255, 255);
         private static readonly Color TextWhite = Color.White;
         private static readonly Color TextLime = AccentLime;
 
@@ -56,7 +56,7 @@ namespace RamFpsOverlay
             FormBorderStyle = FormBorderStyle.None;
             TopMost = true;
             StartPosition = FormStartPosition.Manual;
-            Size = new Size(280, 110);
+            Size = new Size(300, 120);
             Location = new Point(
                 Screen.PrimaryScreen.WorkingArea.Right - Width - 20,
                 Screen.PrimaryScreen.WorkingArea.Bottom - Height - 20
@@ -66,28 +66,30 @@ namespace RamFpsOverlay
             SetStyle(ControlStyles.SupportsTransparentBackColor, true);
             BackColor = Color.Transparent;
 
+            // RAM label - top half
             ramLabel = new Label
             {
-                Text = "RAM",
+                Text = "RAM: --",
                 ForeColor = TextWhite,
                 BackColor = Color.Transparent,
-                Font = new Font("Segoe UI", 13f, FontStyle.Bold),
+                Font = new Font("Segoe UI", 12f, FontStyle.Bold),
                 AutoSize = false,
                 TextAlign = ContentAlignment.MiddleCenter,
                 Dock = DockStyle.Top,
-                Height = 55
+                Height = 60
             };
 
+            // FPS label - bottom half
             fpsLabel = new Label
             {
-                Text = "FPS",
+                Text = "FPS: --",
                 ForeColor = TextLime,
                 BackColor = Color.Transparent,
-                Font = new Font("Segoe UI", 13f, FontStyle.Bold),
+                Font = new Font("Segoe UI", 12f, FontStyle.Bold),
                 AutoSize = false,
                 TextAlign = ContentAlignment.MiddleCenter,
                 Dock = DockStyle.Bottom,
-                Height = 55
+                Height = 60
             };
 
             Controls.Add(ramLabel);
@@ -140,10 +142,16 @@ namespace RamFpsOverlay
 
         private void OnTimerTick(object sender, EventArgs e)
         {
-            float available = ramAvailable.NextValue();
-            ulong used = totalRam - (ulong)(available * 1024 * 1024);
-            double pct = (double)used / totalRam * 100;
-            ramLabel.Text = string.Format("RAM: {0} / {1} GB ({2:F1}%)", used / 1024 / 1024, totalRam / 1024 / 1024, pct);
+            float availableMB = ramAvailable.NextValue();
+            ulong availableBytes = (ulong)(availableMB * 1024 * 1024);
+            ulong usedBytes = totalRam - availableBytes;
+
+            // Convert to GB (bytes -> KB -> MB -> GB)
+            double usedGB = usedBytes / 1024.0 / 1024.0 / 1024.0;
+            double totalGB = totalRam / 1024.0 / 1024.0 / 1024.0;
+            double pct = (double)usedBytes / totalRam * 100;
+
+            ramLabel.Text = string.Format("RAM: {0:F1} / {1:F1} GB ({2:F1}%)", usedGB, totalGB, pct);
 
             if (fpsAvailable)
             {
@@ -199,7 +207,7 @@ namespace RamFpsOverlay
                 e.Graphics.FillPath(surfaceBrush, path);
             }
 
-            // Bright rim - outer edge highlight (like the mockup's glass edge)
+            // Bright rim - outer edge highlight
             using (var path = GetRoundedRect(0.5f, 0.5f, Width - 2, Height - 2, 20))
             using (var rimPen = new Pen(GlassRim, 2f))
             {
@@ -213,7 +221,7 @@ namespace RamFpsOverlay
                 e.Graphics.DrawPath(innerPen, path);
             }
 
-            // Lime accent line at top - liquid glass highlight
+            // Lime accent line at top
             using (var accentPen = new Pen(AccentLime, 2.5f))
             {
                 e.Graphics.DrawLine(accentPen, 24, 2, Width - 24, 2);
