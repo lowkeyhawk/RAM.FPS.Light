@@ -334,6 +334,7 @@ namespace RamFpsOverlay
         {
             timer?.Stop();
             ramAvailable?.Dispose();
+            trayIcon?.Dispose();
             base.OnFormClosing(e);
         }
 
