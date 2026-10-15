@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
@@ -28,6 +29,13 @@ namespace RamFpsOverlay
         private bool isDragging;
         private Point dragStart;
 
+        // Liquid glass design tokens (from AndroidLiquidGlass repo)
+        private static readonly Color AccentColor = Color.FromArgb(0xFF, 0x00, 0x88, 0xFF);
+        private static readonly Color GlassSurface = Color.FromArgb(102, 255, 255, 255); // 40% opacity
+        private static readonly Color GlassBorder = Color.FromArgb(26, 0, 0, 0); // 10% opacity
+        private static readonly Color InnerShadow = Color.FromArgb(38, 0, 0, 0); // 15% opacity
+        private static readonly Color TextColor = Color.White;
+
         public MainForm()
         {
             InitializeComponent();
@@ -47,7 +55,7 @@ namespace RamFpsOverlay
             FormBorderStyle = FormBorderStyle.None;
             TopMost = true;
             StartPosition = FormStartPosition.Manual;
-            Size = new Size(260, 100);
+            Size = new Size(280, 110);
             Location = new Point(
                 Screen.PrimaryScreen.WorkingArea.Right - Width - 20,
                 Screen.PrimaryScreen.WorkingArea.Bottom - Height - 20
@@ -60,25 +68,25 @@ namespace RamFpsOverlay
             ramLabel = new Label
             {
                 Text = "RAM: --",
-                ForeColor = Color.White,
+                ForeColor = TextColor,
                 BackColor = Color.Transparent,
-                Font = new Font("Segoe UI", 11f, FontStyle.Bold),
+                Font = new Font("Segoe UI", 12f, FontStyle.Bold),
                 AutoSize = false,
                 TextAlign = ContentAlignment.MiddleCenter,
                 Dock = DockStyle.Top,
-                Height = 50
+                Height = 55
             };
 
             fpsLabel = new Label
             {
                 Text = "FPS: --",
-                ForeColor = Color.White,
+                ForeColor = TextColor,
                 BackColor = Color.Transparent,
-                Font = new Font("Segoe UI", 11f, FontStyle.Bold),
+                Font = new Font("Segoe UI", 12f, FontStyle.Bold),
                 AutoSize = false,
                 TextAlign = ContentAlignment.MiddleCenter,
                 Dock = DockStyle.Bottom,
-                Height = 50
+                Height = 55
             };
 
             Controls.Add(ramLabel);
@@ -175,27 +183,51 @@ namespace RamFpsOverlay
 
         protected override void OnPaintBackground(PaintEventArgs e)
         {
-            // Do not paint background - let DWM acrylic show through
+            // Let DWM acrylic show through
         }
 
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);
-            // Dark frosted glass - semi-transparent dark fill over the DWM blur
-            using (var fillBrush = new SolidBrush(Color.FromArgb(160, 20, 20, 20)))
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+
+            // Liquid glass surface - rounded rectangle with 40% opacity white
+            using (var path = GetRoundedRect(0, 0, Width - 1, Height - 1, 16))
+            using (var surfaceBrush = new SolidBrush(GlassSurface))
             {
-                e.Graphics.FillRectangle(fillBrush, 0, 0, Width, Height);
+                e.Graphics.FillPath(surfaceBrush, path);
             }
-            // Glassmorphism border - subtle white edge
-            using (var borderPen = new Pen(Color.FromArgb(200, 255, 255, 255), 1.5f))
+
+            // Inner shadow - subtle dark edge inside the glass
+            using (var path = GetRoundedRect(2, 2, Width - 5, Height - 5, 14))
+            using (var shadowBrush = new SolidBrush(InnerShadow))
             {
-                e.Graphics.DrawRectangle(borderPen, 0.75f, 0.75f, Width - 2, Height - 2);
+                e.Graphics.DrawPath(new Pen(shadowBrush, 3), path);
             }
-            // Top highlight - subtle glass reflection
-            using (var highlightPen = new Pen(Color.FromArgb(60, 255, 255, 255), 1))
+
+            // Glass border - 10% opacity dark edge
+            using (var path = GetRoundedRect(0.5f, 0.5f, Width - 2, Height - 2, 16))
+            using (var borderPen = new Pen(GlassBorder, 1.5f))
             {
-                e.Graphics.DrawLine(highlightPen, 8, 1, Width - 8, 1);
+                e.Graphics.DrawPath(borderPen, path);
             }
+
+            // Accent line at top - liquid glass highlight
+            using (var accentPen = new Pen(AccentColor, 2f))
+            {
+                e.Graphics.DrawLine(accentPen, 20, 1, Width - 20, 1);
+            }
+        }
+
+        private static GraphicsPath GetRoundedRect(float x, float y, float w, float h, float r)
+        {
+            var path = new GraphicsPath();
+            path.AddArc(x, y, r * 2, r * 2, 180, 90);
+            path.AddArc(x + w - r * 2, y, r * 2, r * 2, 270, 90);
+            path.AddArc(x + w - r * 2, y + h - r * 2, r * 2, r * 2, 0, 90);
+            path.AddArc(x, y + h - r * 2, r * 2, r * 2, 90, 90);
+            path.CloseFigure();
+            return path;
         }
 
         private void EnableAcrylic()
@@ -208,7 +240,7 @@ namespace RamFpsOverlay
                     {
                         AccentState = AccentState.ACCENT_ENABLE_ACRYLICBLURBEHIND,
                         AccentFlags = 2,
-                        GradientColor = 0x99000000,
+                        GradientColor = 0x99FFFFFF,
                         AnimationId = 0
                     };
                     var data = Marshal.AllocHGlobal(Marshal.SizeOf(accent));
