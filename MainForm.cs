@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Drawing.Text;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
@@ -9,49 +10,53 @@ namespace RamFpsOverlay
 {
     public class MainForm : Form
     {
-        private TableLayoutPanel table;
-        private Label ramLabel;
-        private Label fpsLabel;
         private System.Windows.Forms.Timer timer;
         private NotifyIcon trayIcon;
         private ContextMenuStrip trayMenu;
 
-        // RAM
+        private string ramText = "RAM: --";
+        private string fpsText = "FPS: --";
+
         private PerformanceCounter ramAvailable;
         private ulong totalRam;
 
-        // FPS via DWM (Desktop Window Manager) — works everywhere
         private uint lastDwmFrame;
         private DateTime lastFpsTime;
         private int currentFps;
-        private bool fpsAvailable;
 
-        // Dragging
         private bool isDragging;
         private Point dragStart;
-
-        // Hover/press state
         private bool isHovered;
-        private bool isPressed;
         private Point mousePos;
 
-        // Glassmorphism tokens
+        private Font textFont;
+
         private static readonly Color AccentLime = Color.FromArgb(0xFF, 0xC8, 0xFF, 0x00);
-        private static readonly Color GlassSurface = Color.FromArgb(13, 15, 15, 20); // ~5% opacity
-        private static readonly Color GlassSurfaceHover = Color.FromArgb(18, 20, 20, 28); // ~7% opacity
+        private static readonly Color GlassSurface = Color.FromArgb(60, 15, 15, 20);
+        private static readonly Color GlassSurfaceHover = Color.FromArgb(85, 20, 20, 28);
         private static readonly Color GlassRim = Color.FromArgb(80, 255, 255, 255);
         private static readonly Color GlassRimHover = Color.FromArgb(120, 255, 255, 255);
         private static readonly Color GlassRimInner = Color.FromArgb(40, 255, 255, 255);
-        private static readonly Color SeparatorLine = Color.FromArgb(30, 255, 255, 255);
-        private static readonly Color TextWhite = Color.White;
-        private static readonly Color TextLime = AccentLime;
+        private static readonly Color SeparatorLine = Color.FromArgb(40, 255, 255, 255);
 
         public MainForm()
         {
             InitializeComponent();
             InitializeRam();
-            InitializeFps();
             InitializeTimer();
+        }
+
+        private const int WS_EX_LAYERED = 0x00080000;
+        private const int WS_EX_TOOLWINDOW = 0x00000080;
+
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                var cp = base.CreateParams;
+                cp.ExStyle |= WS_EX_LAYERED | WS_EX_TOOLWINDOW;
+                return cp;
+            }
         }
 
         private void InitializeComponent()
@@ -59,49 +64,14 @@ namespace RamFpsOverlay
             FormBorderStyle = FormBorderStyle.None;
             TopMost = true;
             StartPosition = FormStartPosition.Manual;
+            ShowInTaskbar = false;
             Size = new Size(300, 120);
             Location = new Point(
                 Screen.PrimaryScreen.WorkingArea.Right - Width - 20,
                 Screen.PrimaryScreen.WorkingArea.Bottom - Height - 20
             );
-            DoubleBuffered = true;
-            ShowInTaskbar = false;
-            Visible = true;
-            WindowState = FormWindowState.Normal;
-            BackColor = Color.FromArgb(15, 15, 20);
 
-            table = new TableLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                RowCount = 2,
-                ColumnCount = 1
-            };
-            table.RowStyles.Add(new RowStyle(SizeType.Percent, 50f));
-            table.RowStyles.Add(new RowStyle(SizeType.Percent, 50f));
-
-            ramLabel = new Label
-            {
-                Text = "RAM: --",
-                ForeColor = TextWhite,
-                Font = new Font("Segoe UI", 13f, FontStyle.Bold),
-                AutoSize = false,
-                TextAlign = ContentAlignment.MiddleCenter,
-                Dock = DockStyle.Fill
-            };
-
-            fpsLabel = new Label
-            {
-                Text = "FPS: --",
-                ForeColor = TextLime,
-                Font = new Font("Segoe UI", 13f, FontStyle.Bold),
-                AutoSize = false,
-                TextAlign = ContentAlignment.MiddleCenter,
-                Dock = DockStyle.Fill
-            };
-
-            table.Controls.Add(ramLabel, 0, 0);
-            table.Controls.Add(fpsLabel, 0, 1);
-            Controls.Add(table);
+            textFont = new Font("Segoe UI", 13f, FontStyle.Bold);
 
             var menu = new ContextMenuStrip();
             menu.Items.Add("Exit", null, (s, e) => Application.Exit());
@@ -110,36 +80,43 @@ namespace RamFpsOverlay
             MouseDown += OnMouseDown;
             MouseMove += OnMouseMove;
             MouseUp += OnMouseUp;
-            MouseEnter += OnMouseEnter;
-            MouseLeave += OnMouseLeave;
+            MouseEnter += (s, e) => { isHovered = true; Render(); };
+            MouseLeave += (s, e) => { isHovered = false; Render(); };
+            VisibleChanged += (s, e) => { if (Visible) Render(); };
 
             InitializeTray();
         }
 
+        protected override void OnShown(EventArgs e)
+        {
+            base.OnShown(e);
+            Render();
+        }
+
         private void InitializeTray()
         {
-            // Create a mini glass panel icon
             using (var bmp = new Bitmap(16, 16))
             using (var g = Graphics.FromImage(bmp))
             {
                 g.SmoothingMode = SmoothingMode.AntiAlias;
                 g.Clear(Color.FromArgb(15, 15, 20));
-                // Border
                 g.DrawRectangle(new Pen(Color.FromArgb(80, 255, 255, 255)), 0, 0, 15, 15);
-                // Lime accent
                 g.DrawLine(new Pen(AccentLime, 2), 2, 1, 13, 1);
-                // Text area (two lines)
                 g.DrawLine(Pens.White, 3, 6, 12, 6);
                 g.DrawLine(new Pen(AccentLime, 1), 3, 10, 12, 10);
 
-                var hIcon = bmp.GetHicon();
+                IntPtr hIcon = bmp.GetHicon();
+                Icon icon;
+                using (var tmp = Icon.FromHandle(hIcon))
+                    icon = (Icon)tmp.Clone();
+                DestroyIcon(hIcon);
+
                 trayIcon = new NotifyIcon
                 {
-                    Icon = Icon.FromHandle(hIcon),
+                    Icon = icon,
                     Text = "RAM + FPS Overlay",
                     Visible = true
                 };
-                DestroyIcon(hIcon);
             }
 
             trayMenu = new ContextMenuStrip();
@@ -148,21 +125,13 @@ namespace RamFpsOverlay
             trayIcon.DoubleClick += (s, e) => { Visible = !Visible; };
         }
 
-        [DllImport("user32.dll")]
-        private static extern bool DestroyIcon(IntPtr handle);
-
         private void InitializeRam()
         {
             ramAvailable = new PerformanceCounter("Memory", "Available MBytes");
+            ramAvailable.NextValue();
             var status = new MEMORYSTATUSEX { dwLength = (uint)Marshal.SizeOf<MEMORYSTATUSEX>() };
             GlobalMemoryStatusEx(ref status);
             totalRam = status.ullTotalPhys;
-        }
-
-        private void InitializeFps()
-        {
-            // DWM is always available on Windows 8+
-            fpsAvailable = true;
             lastFpsTime = DateTime.Now;
         }
 
@@ -175,38 +144,34 @@ namespace RamFpsOverlay
 
         private void OnTimerTick(object sender, EventArgs e)
         {
-            // RAM in MB
             float availableMB = ramAvailable.NextValue();
             ulong availableBytes = (ulong)(availableMB * 1024 * 1024);
-            ulong usedBytes = totalRam - availableBytes;
+            ulong usedBytes = availableBytes < totalRam ? totalRam - availableBytes : 0;
 
             double usedMB = usedBytes / 1024.0 / 1024.0;
             double totalMB = totalRam / 1024.0 / 1024.0;
             double pct = (double)usedBytes / totalRam * 100;
+            ramText = string.Format("RAM: {0:F0} / {1:F0} MB ({2:F1}%)", usedMB, totalMB, pct);
 
-            ramLabel.Text = string.Format("RAM: {0:F0} / {1:F0} MB ({2:F1}%)", usedMB, totalMB, pct);
-
-            // FPS via DWM — works everywhere (desktop, browser, games)
-            if (fpsAvailable)
+            try
             {
-                try
+                var timing = new DwmNative.DWM_TIMING_INFO();
+                timing.cbSize = Marshal.SizeOf(timing);
+                DwmNative.DwmGetCompositionTimingInfo(IntPtr.Zero, ref timing);
+                var now = DateTime.Now;
+                double elapsed = (now - lastFpsTime).TotalSeconds;
+                if (elapsed > 0.5)
                 {
-                    var timing = new DwmNative.DWM_TIMING_INFO();
-                    timing.cbSize = Marshal.SizeOf(timing);
-                    DwmNative.DwmGetCompositionTimingInfo(IntPtr.Zero, ref timing);
-                    var now = DateTime.Now;
-                    double elapsed = (now - lastFpsTime).TotalSeconds;
-                    if (elapsed > 0.5)
-                    {
-                        uint delta = timing.cFrame - lastDwmFrame;
-                        currentFps = (int)(delta / elapsed);
-                        lastDwmFrame = timing.cFrame;
-                        lastFpsTime = now;
-                    }
-                    fpsLabel.Text = string.Format("FPS: {0}", currentFps);
+                    uint delta = timing.cFrame - lastDwmFrame;
+                    currentFps = (int)(delta / elapsed);
+                    lastDwmFrame = timing.cFrame;
+                    lastFpsTime = now;
                 }
-                catch { fpsLabel.Text = "FPS: --"; }
+                fpsText = string.Format("FPS: {0}", currentFps);
             }
+            catch { fpsText = "FPS: --"; }
+
+            Render();
         }
 
         private void OnMouseDown(object sender, MouseEventArgs e)
@@ -214,9 +179,7 @@ namespace RamFpsOverlay
             if (e.Button == MouseButtons.Left)
             {
                 isDragging = true;
-                isPressed = true;
                 dragStart = e.Location;
-                Invalidate();
             }
         }
 
@@ -224,98 +187,104 @@ namespace RamFpsOverlay
         {
             mousePos = e.Location;
             if (isDragging)
-            {
                 Location = new Point(Left + e.X - dragStart.X, Top + e.Y - dragStart.Y);
-            }
-            if (!isHovered)
-            {
-                isHovered = true;
-                Invalidate();
-            }
+            else
+                Render();
         }
 
         private void OnMouseUp(object sender, MouseEventArgs e)
         {
             isDragging = false;
-            isPressed = false;
-            Invalidate();
         }
 
-        private void OnMouseEnter(object sender, EventArgs e)
+        private void Render()
         {
-            isHovered = true;
-            Invalidate();
-        }
+            if (!IsHandleCreated || !Visible) return;
 
-        private void OnMouseLeave(object sender, EventArgs e)
-        {
-            isHovered = false;
-            isPressed = false;
-            Invalidate();
-        }
-
-        protected override void OnPaintBackground(PaintEventArgs e)
-        {
-            base.OnPaintBackground(e);
-        }
-
-        protected override void OnPaint(PaintEventArgs e)
-        {
-            base.OnPaint(e);
-            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-
-            // Glass surface - dark frosted glass
-            var surfaceColor = isHovered ? GlassSurfaceHover : GlassSurface;
-            using (var path = GetRoundedRect(0, 0, Width - 1, Height - 1, 20))
-            using (var surfaceBrush = new SolidBrush(surfaceColor))
+            using (var bmp = new Bitmap(Width, Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb))
+            using (var g = Graphics.FromImage(bmp))
             {
-                e.Graphics.FillPath(surfaceBrush, path);
-            }
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+                g.Clear(Color.Transparent);
 
-            // Drop shadow
-            for (int i = 1; i <= 4; i++)
-            {
-                using (var path = GetRoundedRect(i * 0.5f, i * 0.5f, Width - 1 - i, Height - 1 - i, 20))
-                using (var shadowPen = new Pen(Color.FromArgb(15, 0, 0, 0), 1f))
+                using (var path = GetRoundedRect(0, 0, Width - 1, Height - 1, 20))
+                using (var brush = new SolidBrush(isHovered ? GlassSurfaceHover : GlassSurface))
+                    g.FillPath(brush, path);
+
+                using (var path = GetRoundedRect(0.5f, 0.5f, Width - 2, Height - 2, 20))
+                using (var pen = new Pen(isHovered ? GlassRimHover : GlassRim, isHovered ? 2.5f : 2f))
+                    g.DrawPath(pen, path);
+
+                using (var path = GetRoundedRect(2.5f, 2.5f, Width - 6, Height - 6, 18))
+                using (var pen = new Pen(GlassRimInner, 1f))
+                    g.DrawPath(pen, path);
+
+                if (isHovered)
                 {
-                    e.Graphics.DrawPath(shadowPen, path);
+                    using (var brush = new SolidBrush(Color.FromArgb(25, 255, 255, 255)))
+                        g.FillEllipse(brush, mousePos.X - 30, mousePos.Y - 30, 60, 60);
                 }
-            }
 
-            // Rim - brighter on hover
-            var rimColor = isHovered ? GlassRimHover : GlassRim;
-            using (var path = GetRoundedRect(0.5f, 0.5f, Width - 2, Height - 2, 20))
-            using (var rimPen = new Pen(rimColor, isHovered ? 2.5f : 2f))
-            {
-                e.Graphics.DrawPath(rimPen, path);
-            }
+                using (var pen = new Pen(SeparatorLine, 1f))
+                    g.DrawLine(pen, 24, Height / 2, Width - 24, Height / 2);
+                using (var pen = new Pen(AccentLime, 2.5f))
+                    g.DrawLine(pen, 24, 2, Width - 24, 2);
 
-            // Inner glow
-            using (var path = GetRoundedRect(2.5f, 2.5f, Width - 6, Height - 6, 18))
-            using (var innerPen = new Pen(GlassRimInner, 1f))
-            {
-                e.Graphics.DrawPath(innerPen, path);
-            }
-
-            // Specular highlight on hover
-            if (isHovered)
-            {
-                using (var specularBrush = new SolidBrush(Color.FromArgb(25, 255, 255, 255)))
+                var topRect = new RectangleF(0, 0, Width, Height / 2f);
+                var botRect = new RectangleF(0, Height / 2f, Width, Height / 2f);
+                using (var sf = new StringFormat
                 {
-                    e.Graphics.FillEllipse(specularBrush, mousePos.X - 30, mousePos.Y - 30, 60, 60);
+                    Alignment = StringAlignment.Center,
+                    LineAlignment = StringAlignment.Center
+                })
+                using (var shadow = new SolidBrush(Color.FromArgb(140, 0, 0, 0)))
+                using (var white = new SolidBrush(Color.White))
+                using (var lime = new SolidBrush(AccentLime))
+                {
+                    g.DrawString(ramText, textFont, shadow, new RectangleF(topRect.X + 1, topRect.Y + 1, topRect.Width, topRect.Height), sf);
+                    g.DrawString(ramText, textFont, white, topRect, sf);
+                    g.DrawString(fpsText, textFont, shadow, new RectangleF(botRect.X + 1, botRect.Y + 1, botRect.Width, botRect.Height), sf);
+                    g.DrawString(fpsText, textFont, lime, botRect, sf);
                 }
-            }
 
-            // Separator line
-            using (var sepPen = new Pen(SeparatorLine, 1f))
-            {
-                e.Graphics.DrawLine(sepPen, 24, Height / 2, Width - 24, Height / 2);
+                SetLayeredBitmap(bmp);
             }
+        }
 
-            // Lime accent line at top
-            using (var accentPen = new Pen(AccentLime, 2.5f))
+        private void SetLayeredBitmap(Bitmap bmp)
+        {
+            IntPtr screenDc = GetDC(IntPtr.Zero);
+            IntPtr memDc = CreateCompatibleDC(screenDc);
+            IntPtr hBmp = IntPtr.Zero;
+            IntPtr oldBmp = IntPtr.Zero;
+            try
             {
-                e.Graphics.DrawLine(accentPen, 24, 2, Width - 24, 2);
+                hBmp = bmp.GetHbitmap(Color.FromArgb(0));
+                oldBmp = SelectObject(memDc, hBmp);
+
+                var size = new Size(bmp.Width, bmp.Height);
+                var src = new Point(0, 0);
+                var topPos = new Point(Left, Top);
+                var blend = new BLENDFUNCTION
+                {
+                    BlendOp = 0,
+                    BlendFlags = 0,
+                    SourceConstantAlpha = 255,
+                    AlphaFormat = 1
+                };
+
+                UpdateLayeredWindow(Handle, screenDc, ref topPos, ref size, memDc, ref src, 0, ref blend, 2);
+            }
+            finally
+            {
+                ReleaseDC(IntPtr.Zero, screenDc);
+                if (hBmp != IntPtr.Zero)
+                {
+                    SelectObject(memDc, oldBmp);
+                    DeleteObject(hBmp);
+                }
+                DeleteDC(memDc);
             }
         }
 
@@ -334,9 +303,31 @@ namespace RamFpsOverlay
         {
             timer?.Stop();
             ramAvailable?.Dispose();
+            textFont?.Dispose();
             trayIcon?.Dispose();
             base.OnFormClosing(e);
         }
+
+        [StructLayout(LayoutKind.Sequential, Pack = 1)]
+        private struct BLENDFUNCTION
+        {
+            public byte BlendOp;
+            public byte BlendFlags;
+            public byte SourceConstantAlpha;
+            public byte AlphaFormat;
+        }
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool UpdateLayeredWindow(IntPtr hwnd, IntPtr hdcDst, ref Point pptDst, ref Size psize,
+            IntPtr hdcSrc, ref Point pprSrc, int crKey, ref BLENDFUNCTION pblend, int dwFlags);
+
+        [DllImport("user32.dll")] private static extern IntPtr GetDC(IntPtr hWnd);
+        [DllImport("user32.dll")] private static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
+        [DllImport("user32.dll")] private static extern bool DestroyIcon(IntPtr handle);
+        [DllImport("gdi32.dll")] private static extern IntPtr CreateCompatibleDC(IntPtr hDC);
+        [DllImport("gdi32.dll")] private static extern bool DeleteDC(IntPtr hdc);
+        [DllImport("gdi32.dll")] private static extern IntPtr SelectObject(IntPtr hDC, IntPtr hObject);
+        [DllImport("gdi32.dll")] private static extern bool DeleteObject(IntPtr hObject);
 
         [DllImport("kernel32.dll")]
         [return: MarshalAs(UnmanagedType.Bool)]
