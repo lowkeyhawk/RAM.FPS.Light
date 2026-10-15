@@ -181,15 +181,20 @@ namespace RamFpsOverlay
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);
-            // Glassmorphism: subtle white border + soft glow
-            using (var borderPen = new Pen(Color.FromArgb(180, 255, 255, 255), 1.5f))
+            // Dark frosted glass - semi-transparent dark fill over the DWM blur
+            using (var fillBrush = new SolidBrush(Color.FromArgb(160, 20, 20, 20)))
             {
-                e.Graphics.DrawRectangle(borderPen, 0.5f, 0.5f, Width - 2, Height - 2);
+                e.Graphics.FillRectangle(fillBrush, 0, 0, Width, Height);
             }
-            // Frosted glass overlay - very subtle white fill
-            using (var fillBrush = new SolidBrush(Color.FromArgb(30, 255, 255, 255)))
+            // Glassmorphism border - subtle white edge
+            using (var borderPen = new Pen(Color.FromArgb(200, 255, 255, 255), 1.5f))
             {
-                e.Graphics.FillRectangle(fillBrush, 1, 1, Width - 3, Height - 3);
+                e.Graphics.DrawRectangle(borderPen, 0.75f, 0.75f, Width - 2, Height - 2);
+            }
+            // Top highlight - subtle glass reflection
+            using (var highlightPen = new Pen(Color.FromArgb(60, 255, 255, 255), 1))
+            {
+                e.Graphics.DrawLine(highlightPen, 8, 1, Width - 8, 1);
             }
         }
 
@@ -203,7 +208,7 @@ namespace RamFpsOverlay
                     {
                         AccentState = AccentState.ACCENT_ENABLE_ACRYLICBLURBEHIND,
                         AccentFlags = 2,
-                        GradientColor = 0xCCFFFFFF,
+                        GradientColor = 0x99000000,
                         AnimationId = 0
                     };
                     var data = Marshal.AllocHGlobal(Marshal.SizeOf(accent));
