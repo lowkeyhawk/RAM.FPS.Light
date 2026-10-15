@@ -37,13 +37,14 @@ namespace RamFpsOverlay
 
         // Glassmorphism tokens
         private static readonly Color AccentLime = Color.FromArgb(0xFF, 0xC8, 0xFF, 0x00);
+        private static readonly Color GlassSurface = Color.FromArgb(220, 15, 15, 20);
+        private static readonly Color GlassSurfaceHover = Color.FromArgb(230, 20, 20, 28);
         private static readonly Color GlassRim = Color.FromArgb(80, 255, 255, 255);
         private static readonly Color GlassRimHover = Color.FromArgb(120, 255, 255, 255);
         private static readonly Color GlassRimInner = Color.FromArgb(40, 255, 255, 255);
         private static readonly Color SeparatorLine = Color.FromArgb(30, 255, 255, 255);
         private static readonly Color TextWhite = Color.White;
         private static readonly Color TextLime = AccentLime;
-        private static readonly Color ShadowColor = Color.FromArgb(60, 0, 0, 0);
 
         public MainForm()
         {
@@ -51,13 +52,6 @@ namespace RamFpsOverlay
             InitializeRam();
             InitializeFps();
             InitializeTimer();
-        }
-
-        protected override void OnHandleCreated(EventArgs e)
-        {
-            base.OnHandleCreated(e);
-            EnableAcrylic();
-            DwmFlush();
         }
 
         private void InitializeComponent()
@@ -72,15 +66,15 @@ namespace RamFpsOverlay
             );
             DoubleBuffered = true;
             ShowInTaskbar = false;
-            SetStyle(ControlStyles.SupportsTransparentBackColor, true);
-            BackColor = Color.Transparent;
+            Visible = true;
+            WindowState = FormWindowState.Normal;
+            BackColor = Color.FromArgb(15, 15, 20);
 
             table = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
                 RowCount = 2,
-                ColumnCount = 1,
-                BackColor = Color.Transparent
+                ColumnCount = 1
             };
             table.RowStyles.Add(new RowStyle(SizeType.Percent, 50f));
             table.RowStyles.Add(new RowStyle(SizeType.Percent, 50f));
@@ -89,7 +83,6 @@ namespace RamFpsOverlay
             {
                 Text = "RAM: --",
                 ForeColor = TextWhite,
-                BackColor = Color.Transparent,
                 Font = new Font("Segoe UI", 13f, FontStyle.Bold),
                 AutoSize = false,
                 TextAlign = ContentAlignment.MiddleCenter,
@@ -100,7 +93,6 @@ namespace RamFpsOverlay
             {
                 Text = "FPS: N/A",
                 ForeColor = TextLime,
-                BackColor = Color.Transparent,
                 Font = new Font("Segoe UI", 13f, FontStyle.Bold),
                 AutoSize = false,
                 TextAlign = ContentAlignment.MiddleCenter,
@@ -211,7 +203,6 @@ namespace RamFpsOverlay
             if (isDragging)
             {
                 Location = new Point(Left + e.X - dragStart.X, Top + e.Y - dragStart.Y);
-                DwmFlush();
             }
             if (!isHovered)
             {
@@ -224,7 +215,6 @@ namespace RamFpsOverlay
         {
             isDragging = false;
             isPressed = false;
-            DwmFlush();
             Invalidate();
         }
 
@@ -243,14 +233,23 @@ namespace RamFpsOverlay
 
         protected override void OnPaintBackground(PaintEventArgs e)
         {
-            // Let DWM acrylic blur show through
+            base.OnPaintBackground(e);
         }
 
         protected override void OnPaint(PaintEventArgs e)
         {
+            base.OnPaint(e);
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
 
-            // Drop shadow for depth
+            // Glass surface - dark frosted glass
+            var surfaceColor = isHovered ? GlassSurfaceHover : GlassSurface;
+            using (var path = GetRoundedRect(0, 0, Width - 1, Height - 1, 20))
+            using (var surfaceBrush = new SolidBrush(surfaceColor))
+            {
+                e.Graphics.FillPath(surfaceBrush, path);
+            }
+
+            // Drop shadow
             for (int i = 1; i <= 4; i++)
             {
                 using (var path = GetRoundedRect(i * 0.5f, i * 0.5f, Width - 1 - i, Height - 1 - i, 20))
@@ -275,7 +274,7 @@ namespace RamFpsOverlay
                 e.Graphics.DrawPath(innerPen, path);
             }
 
-            // Specular highlight on hover - radial gradient at mouse position
+            // Specular highlight on hover
             if (isHovered)
             {
                 using (var specularBrush = new SolidBrush(Color.FromArgb(25, 255, 255, 255)))
@@ -308,34 +307,6 @@ namespace RamFpsOverlay
             return path;
         }
 
-        private void EnableAcrylic()
-        {
-            if (IsHandleCreated)
-            {
-                try
-                {
-                    var accent = new AccentPolicy
-                    {
-                        AccentState = AccentState.ACCENT_ENABLE_ACRYLICBLURBEHIND,
-                        AccentFlags = 2,
-                        GradientColor = 0x99000000,
-                        AnimationId = 0
-                    };
-                    var data = Marshal.AllocHGlobal(Marshal.SizeOf(accent));
-                    Marshal.StructureToPtr(accent, data, false);
-                    var attr = new WindowCompositionAttributeData
-                    {
-                        Attribute = WindowCompositionAttribute.WCA_ACCENT_POLICY,
-                        Data = data,
-                        SizeOfData = Marshal.SizeOf(accent)
-                    };
-                    SetWindowCompositionAttribute(Handle, ref attr);
-                    Marshal.FreeHGlobal(data);
-                }
-                catch { }
-            }
-        }
-
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
             timer?.Stop();
@@ -346,12 +317,6 @@ namespace RamFpsOverlay
         [DllImport("kernel32.dll")]
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool GlobalMemoryStatusEx(ref MEMORYSTATUSEX lpBuffer);
-
-        [DllImport("user32.dll")]
-        private static extern int SetWindowCompositionAttribute(IntPtr hwnd, ref WindowCompositionAttributeData data);
-
-        [DllImport("dwmapi.dll")]
-        private static extern int DwmFlush();
 
         [StructLayout(LayoutKind.Sequential)]
         private struct MEMORYSTATUSEX
@@ -365,38 +330,6 @@ namespace RamFpsOverlay
             public ulong ullTotalVirtual;
             public ulong ullAvailVirtual;
             public ulong ullAvailExtendedVirtual;
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct AccentPolicy
-        {
-            public AccentState AccentState;
-            public int AccentFlags;
-            public uint GradientColor;
-            public int AnimationId;
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct WindowCompositionAttributeData
-        {
-            public WindowCompositionAttribute Attribute;
-            public IntPtr Data;
-            public int SizeOfData;
-        }
-
-        private enum WindowCompositionAttribute
-        {
-            WCA_ACCENT_POLICY = 19
-        }
-
-        private enum AccentState
-        {
-            ACCENT_DISABLED = 0,
-            ACCENT_ENABLE_GRADIENT = 1,
-            ACCENT_ENABLE_TRANSPARENTGRADIENT = 2,
-            ACCENT_ENABLE_BLURBEHIND = 3,
-            ACCENT_ENABLE_ACRYLICBLURBEHIND = 4,
-            ACCENT_INVALID_STATE = 5
         }
     }
 
