@@ -11,8 +11,11 @@ No installer, no dependencies, no build step. Download the .exe and run it.
 Grab `RamFpsOverlay.exe` from the latest release. It is a self-contained
 x64 build, so the .NET runtime is already inside it — nothing to install.
 
-Current release: **v1.0.0**
-`RamFpsOverlay.exe` — 146 MB — SHA256 `ef58813e747f47f5121e1a3a0db5ef3498c46bd89442cc7b1f41adc6db0e2f9e`
+Current release: **v1.1.0**
+`RamFpsOverlay.exe` — 148 MB — SHA256 `e6182b12142f9ff83f14b2cb9c8473bc8ff8f902cf09caebfeba06a70297c187`
+
+v1.1.0 asks for administrator rights on launch (see Usage below). v1.0.0 did
+not.
 
 Windows Defender SmartScreen may show a one-time warning because the
 publisher is unrecognised. Click **More info**, then **Run anyway**.
