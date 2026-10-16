@@ -24,8 +24,14 @@ publisher is unrecognised. Click **More info**, then **Run anyway**.
 - **Double-click** the tray icon to show or hide the panel.
 - **Right-click** the tray icon for **Exit**.
 - Top line is RAM (`used / total MB` and a percentage).
-- Bottom line is FPS, read from the DWM compositor, so it tracks desktop,
-  browser and game activity. It reads `0` when nothing on screen is moving.
+- Bottom line is the frame rate of the app in the **foreground**, counted from
+  DirectX presents. It works windowed, borderless and exclusive fullscreen.
+- Windows asks for administrator rights on launch — reading the DXGI ETW
+  provider requires it. Decline and the FPS line stays blank.
+- `FPS: --` means the foreground app is not presenting through DXGI: the
+  desktop, a GDI app, or a game presenting through an OpenGL/Vulkan swapchain.
+- The tray tooltip says which source the number came from (`DXGI <process>` or
+  `DWM compositor`).
 
 ## Building from source
 
@@ -51,8 +57,21 @@ the self-contained output stays around 146 MB.
   `PerformanceCounter("Memory", "Available MBytes")` for what is free.
   The first `NextValue()` call always returns 0, so it is primed during
   initialisation.
-- FPS: `DwmGetCompositionTimingInfo` (dwmapi.dll) gives the compositor frame
-  count. FPS is the frame delta over elapsed time.
+- FPS: an ETW session subscribes to the `Microsoft-Windows-DXGI` provider and
+  counts event 42 (`Present/Start`, task `Present` + opcode `Start`) per
+  swapchain. These events are written by `dxgi.dll` inside the presenting
+  process, so the ETW header PID identifies the app that drew the frame. The
+  overlay reports the frame rate of the foreground window's process, matched by
+  PID first and by image name second — browsers and several engines present from
+  a child GPU process, so the PID alone is not enough. `DXGI_PRESENT_TEST`
+  events are ignored (they probe instead of drawing), and the busiest swapchain
+  of the matched process is used, because a multi-monitor app owns one per
+  display. The rate is measured over a sliding 2-second window: ETW real-time
+  delivery arrives in ~1 second bursts, and a shorter window aliases against
+  them. Falls back to `DwmGetCompositionTimingInfo` when nothing in the
+  foreground presents through DXGI; that counter tracks desktop and browser
+  activity but cannot see DirectX games, and is unavailable on some machines
+  (it returns `DWM_E_COMPOSITIONDISABLED`, `0x88980090`).
 - Rendering: a layered window (`WS_EX_LAYERED` + `UpdateLayeredWindow`) with
   the whole panel drawn into a 32bpp ARGB bitmap, which gives true per-pixel
   alpha without depending on DWM acrylic.

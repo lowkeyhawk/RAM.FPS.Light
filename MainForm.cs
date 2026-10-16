@@ -20,9 +20,17 @@ namespace RamFpsOverlay
         private PerformanceCounter ramAvailable;
         private ulong totalRam;
 
-        private uint lastDwmFrame;
+        private ulong lastDwmFrame;
         private DateTime lastFpsTime;
         private int currentFps;
+
+        private DxgiFpsCounter fpsCounter;
+        private string fpsSource = "starting";
+
+        // Frames are counted by their own event timestamps across this window, so
+        // the value is a true average rather than a sample of ETW's ~1 second
+        // delivery bursts.
+        private const double FpsWindowSeconds = 2.0;
 
         private bool isDragging;
         private Point dragStart;
@@ -43,6 +51,7 @@ namespace RamFpsOverlay
         {
             InitializeComponent();
             InitializeRam();
+            InitializeFps();
             InitializeTimer();
         }
 
@@ -135,6 +144,13 @@ namespace RamFpsOverlay
             lastFpsTime = DateTime.Now;
         }
 
+        private void InitializeFps()
+        {
+            fpsCounter = new DxgiFpsCounter();
+            if (!fpsCounter.Start())
+                fpsSource = fpsCounter.LastError == "not elevated" ? "run as administrator" : "unavailable";
+        }
+
         private void InitializeTimer()
         {
             timer = new System.Windows.Forms.Timer { Interval = 500 };
@@ -153,14 +169,14 @@ namespace RamFpsOverlay
             double pct = (double)usedBytes / totalRam * 100;
             ramText = string.Format("RAM: {0:F0} / {1:F0} MB ({2:F1}%)", usedMB, totalMB, pct);
 
-            try
+            /*try
             {
                 var timing = new DwmNative.DWM_TIMING_INFO();
                 timing.cbSize = Marshal.SizeOf(timing);
                 DwmNative.DwmGetCompositionTimingInfo(IntPtr.Zero, ref timing);
                 var now = DateTime.Now;
                 double elapsed = (now - lastFpsTime).TotalSeconds;
-                if (elapsed > 0.5)
+                if (elapsed > 0.1)
                 {
                     uint delta = timing.cFrame - lastDwmFrame;
                     currentFps = (int)(delta / elapsed);
@@ -170,8 +186,58 @@ namespace RamFpsOverlay
                 fpsText = string.Format("FPS: {0}", currentFps);
             }
             catch { fpsText = "FPS: --"; }
-
+            */
+            var now = DateTime.Now;
+            double elapsed = (now - lastFpsTime).TotalSeconds;
+            if (elapsed > 0.05)
+            {
+                int fps;
+                string proc;
+                if (fpsCounter != null && fpsCounter.IsRunning && fpsCounter.TrySample(FpsWindowSeconds, out fps, out proc))
+                {
+                    currentFps = fps;
+                    fpsSource = "DXGI " + proc;
+                    fpsText = $"FPS: {currentFps}";
+                }
+                else if (SampleDwmFps(elapsed, out fps))
+                {
+                    // Nothing in the foreground is presenting to DXGI (desktop,
+                    // GDI/OpenGL app). Fall back to the compositor rate, which
+                    // is what this overlay reported before.
+                    currentFps = fps;
+                    fpsSource = "DWM compositor";
+                    fpsText = $"FPS: {currentFps}";
+                }
+                else
+                {
+                    fpsSource = fpsCounter != null && fpsCounter.IsRunning ? "no presenter" : "run as administrator";
+                    fpsText = "FPS: --";
+                }
+                lastFpsTime = now;
+                UpdateTrayText();
+            }
             Render();
+        }
+
+        private bool SampleDwmFps(double elapsed, out int fps)
+        {
+            fps = 0;
+            try
+            {
+                var timing = new DwmNative.DWM_TIMING_INFO();
+                timing.cbSize = (uint)Marshal.SizeOf(typeof(DwmNative.DWM_TIMING_INFO));
+                if (DwmNative.DwmGetCompositionTimingInfo(IntPtr.Zero, ref timing) != 0) return false;
+                fps = (int)Math.Round((timing.cFrame - lastDwmFrame) / elapsed);
+                lastDwmFrame = timing.cFrame;
+                return true;
+            }
+            catch { return false; }
+        }
+
+        private void UpdateTrayText()
+        {
+            string text = "RAM + FPS - " + (fpsSource.Length > 0 ? fpsSource : "starting");
+            trayIcon.Text = text.Length > 63 ? text.Substring(0, 63) : text;
         }
 
         private void OnMouseDown(object sender, MouseEventArgs e)
@@ -303,6 +369,7 @@ namespace RamFpsOverlay
         {
             timer?.Stop();
             ramAvailable?.Dispose();
+            fpsCounter?.Dispose();
             textFont?.Dispose();
             trayIcon?.Dispose();
             base.OnFormClosing(e);
@@ -354,9 +421,53 @@ namespace RamFpsOverlay
         public static extern int DwmGetCompositionTimingInfo(IntPtr hwnd, ref DWM_TIMING_INFO timingInfo);
 
         [StructLayout(LayoutKind.Sequential)]
+        public struct UNSIGNED_RATIO { public uint uiNumerator; public uint uiDenominator; }
+
+        [StructLayout(LayoutKind.Sequential)]
         public struct DWM_TIMING_INFO
         {
-            public int cbSize;
+            public uint cbSize;
+            public UNSIGNED_RATIO rateRefresh;
+            public ulong qpcRefreshPeriod;
+            public UNSIGNED_RATIO rateCompose;
+            public ulong qpcVBlank;
+            public ulong cRefresh;
+            public uint cDXRefresh;
+            public ulong qpcCompose;
+            public ulong cFrame;               // 64-bit
+            public uint cDXPresent;
+            public ulong cRefreshFrame;
+            public ulong cFrameSubmitted;
+            public uint cDXPresentSubmitted;
+            public ulong cFrameConfirmed;
+            public uint cDXPresentConfirmed;
+            public ulong cRefreshConfirmed;
+            public uint cDXRefreshConfirmed;
+            public ulong cFramesLate;
+            public uint cFramesOutstanding;
+            public ulong cFrameDisplayed;
+            public ulong qpcFrameDisplayed;
+            public ulong cRefreshFrameDisplayed;
+            public ulong cFrameComplete;
+            public ulong qpcFrameComplete;
+            public ulong cFramePending;
+            public ulong qpcFramePending;
+            public ulong cFramesDisplayed;
+            public ulong cFramesComplete;
+            public ulong cFramesPending;
+            public ulong cFramesAvailable;
+            public ulong cFramesDropped;
+            public ulong cFramesMissed;
+            public ulong cRefreshNextDisplayed;
+            public ulong cRefreshNextPresented;
+            public ulong cRefreshesDisplayed;
+            public ulong cRefreshesPresented;
+            public ulong cRefreshStarted;
+            public ulong cPixelsReceived;
+            public ulong cPixelsDrawn;
+            public ulong cBuffersEmpty;
+            /*
+            public UNSIGNED_RATIO rateRefresh;
             public long qpcRefreshPeriod;
             public long qpcComposeTime;
             public long qpcFrameDuration;
@@ -376,6 +487,10 @@ namespace RamFpsOverlay
             public long qpcFrameStart;
             public uint cFramesSinceLastModeChange;
             public uint cFramesRefreshed;
+            */
+
+
+        
         }
     }
 }
